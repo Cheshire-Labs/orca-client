@@ -22,3 +22,6 @@ htmlcov/
 .serena/
 claude.md
 demo/
+
+# Local-only developer notes (not committed)
+CLAUDE.local.md

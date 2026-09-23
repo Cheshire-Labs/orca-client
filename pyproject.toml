@@ -3,18 +3,18 @@ requires = ["setuptools>=42", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "swarm-client"
+name = "orca-client"
 dynamic = ["version"]
-description = "WebSocket client for connecting local device drivers to Swarm platform"
+description = "Connects lab devices on this computer to an Orca runtime over WebSocket"
 authors = [
     { name = "Cheshire Labs", email = "support@cheshirelabs.io" }
 ]
-urls = {Repository = "https://github.com/Cheshire-Labs/swarm-client"}
+urls = {Repository = "https://github.com/Cheshire-Labs/orca-client"}
 readme = "README.md"
-license = {text = "AGPL-3.0-only"}
+license = {text = "SSPL-1.0"}
 classifiers = [
     "Programming Language :: Python :: 3.10",
-    "License :: OSI Approved :: GNU Affero General Public License v3",
+    "License :: Other/Proprietary License",
     "Operating System :: OS Independent"
 ]
 requires-python = ">=3.10"
@@ -22,7 +22,7 @@ dependencies = [
     "websockets>=12.0",
     "pydantic>=2.0",
     "python-dotenv>=1.0.0",
-    "cheshire-drivers @ git+https://github.com/Cheshire-Labs/cheshire-drivers.git@v0.1.0",
+    "cheshire-drivers @ git+https://github.com/Cheshire-Labs/cheshire-drivers.git@v1.0.0",
 ]
 
 [project.optional-dependencies]
@@ -40,4 +40,4 @@ where = ["src"]
 "*" = ["py.typed"]
 
 [tool.setuptools.dynamic]
-version = {attr = "swarm_client.__version__"}
+version = {attr = "orca_client.__version__"}

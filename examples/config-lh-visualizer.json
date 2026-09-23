@@ -1,7 +1,7 @@
 {
-  "client_id": "test-workstation-local",
+  "client_id": "test-visualizer",
   "site": "local",
-  "lab": "test",
+  "lab": "dev",
   "workcell": null,
   "platform": {
     "url": "ws://localhost:8765/ws/devices",
@@ -11,10 +11,12 @@
   },
   "devices": [
     {
-      "type": "transporter",
-      "name": "PreciseFlex Simulator",
+      "type": "liquid_handler",
+      "name": "Test LH (Chatterbox Visualizer)",
       "driver": {
-        "type": "sim"
+        "type": "plr",
+        "backend": "LiquidHandlerChatterboxBackend",
+        "deck_type": "STARLet"
       }
     }
   ]

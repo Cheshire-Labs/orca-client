@@ -4,15 +4,13 @@
   "lab": "molbio",
   "workcell": null,
   "platform": {
-    "url": "wss://swarm.cheshirelabs.io/ws/devices",
-    "api_key": "${SWARM_API_KEY}",
+    "url": "wss://your-deployment.example.com/ws/devices",
+    "api_key": "${ORCA_CLIENT_API_KEY}",
     "heartbeat_interval": 30.0,
-    "command_timeout": 60.0,
     "reconnect_backoff": [1, 2, 4, 8, 16, 30]
   },
   "devices": [
     {
-      "device_id": "shaker_1",
       "type": "shaker",
       "name": "Inheco Thermoshake",
       "driver": {
@@ -26,7 +24,6 @@
       }
     },
     {
-      "device_id": "centrifuge_1",
       "type": "centrifuge",
       "name": "Agilent VS6000",
       "driver": {
@@ -34,17 +31,19 @@
       }
     },
     {
-      "device_id": "arm_1",
       "type": "transporter",
       "name": "PreciseFlex 400",
       "driver": {
         "type": "plr",
-        "backend": "PreciseFlex400Backend",
-        "teachpoints_file": "teachpoints.xml",
+        "backend": "PreciseFlex",
         "connection": {
           "type": "tcp",
           "host": "192.168.1.100",
-          "tcp_port": 5000
+          "tcp_port": 10100
+        },
+        "arm": {
+          "gripper_z_offset": 0.0,
+          "closed_gripper_position": 75.5
         }
       }
     }

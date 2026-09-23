@@ -1,11 +1,13 @@
-"""Pytest configuration and fixtures for swarm-client tests."""
+"""Pytest configuration and fixtures for orca-client tests."""
 
 import pytest
 import asyncio
+import inspect
+from collections.abc import Awaitable, Callable
 from typing import Dict, Any, AsyncGenerator
 
-from swarm_client.devices import DeviceRegistry, DeviceFactory
-from swarm_client.config.models import (
+from orca_client.devices import DeviceRegistry, DeviceFactory
+from orca_client.config.models import (
     DeviceConfig, DriverConfig, ConnectionConfig,
     PlatformConfig, ClientConfig
 )
@@ -23,9 +25,8 @@ def event_loop():
 def sim_shaker_config() -> DeviceConfig:
     """Create a simulation shaker device config."""
     return DeviceConfig(
-        device_id="test_shaker",
         type="shaker",
-        name="Test Shaker",
+        name="test_shaker",
         driver=DriverConfig(type="sim")
     )
 
@@ -34,9 +35,8 @@ def sim_shaker_config() -> DeviceConfig:
 def sim_centrifuge_config() -> DeviceConfig:
     """Create a simulation centrifuge device config."""
     return DeviceConfig(
-        device_id="test_centrifuge",
         type="centrifuge",
-        name="Test Centrifuge",
+        name="test_centrifuge",
         driver=DriverConfig(type="sim")
     )
 
@@ -48,7 +48,6 @@ def platform_config() -> PlatformConfig:
         url="wss://test.example.com/ws/devices",
         api_key="test_api_key",
         heartbeat_interval=10.0,
-        command_timeout=30.0
     )
 
 
@@ -86,19 +85,17 @@ async def device_registry(
     # Register shaker
     shaker = device_factory.create_driver(sim_shaker_config)
     registry.register(
-        device_id=sim_shaker_config.device_id,
+        name=sim_shaker_config.name,
         device_type=sim_shaker_config.type,
         driver=shaker,
-        name=sim_shaker_config.name
     )
 
     # Register centrifuge
     centrifuge = device_factory.create_driver(sim_centrifuge_config)
     registry.register(
-        device_id=sim_centrifuge_config.device_id,
+        name=sim_centrifuge_config.name,
         device_type=sim_centrifuge_config.type,
         driver=centrifuge,
-        name=sim_centrifuge_config.name
     )
 
     # Initialize all
@@ -108,3 +105,49 @@ async def device_registry(
 
     # Cleanup
     await registry.cleanup_all()
+
+
+@pytest.fixture
+def recorded_sleeps(monkeypatch: pytest.MonkeyPatch) -> list[float]:
+    """Record every ``asyncio.sleep`` duration and return instantly.
+
+    Timing tests assert on the *requested* sleep, not measured wall-clock, so
+    they stay deterministic and never flake under CI load.
+    """
+    durations: list[float] = []
+    real_sleep = asyncio.sleep
+
+    async def fake_sleep(delay: float) -> None:
+        durations.append(delay)
+        await real_sleep(0)
+
+    monkeypatch.setattr(asyncio, "sleep", fake_sleep)
+    return durations
+
+
+@pytest.fixture
+def wait_until() -> Callable[..., Awaitable[None]]:
+    """Return ``await wait_until(pred, timeout=...)``: drive the event loop until
+    ``pred()`` (sync or async) is truthy.
+
+    Condition-driven, not time-driven, so it never flakes under load; the
+    timeout is only a safety ceiling so a genuine hang fails loudly instead of
+    spinning forever.
+    """
+    async def _wait_until(
+        predicate: Callable[[], bool | Awaitable[bool]],
+        *,
+        timeout: float = 5.0,
+    ) -> None:
+        async def _run() -> None:
+            while True:
+                result = predicate()
+                if inspect.isawaitable(result):
+                    result = await result
+                if result:
+                    return
+                await asyncio.sleep(0)
+
+        await asyncio.wait_for(_run(), timeout=timeout)
+
+    return _wait_until
