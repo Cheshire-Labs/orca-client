@@ -1,1 +1,1 @@
-"""Tests package for swarm-client."""
+"""Tests package for orca-client."""

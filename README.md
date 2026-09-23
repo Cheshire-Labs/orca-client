@@ -1,44 +1,48 @@
-# Swarm Client
+# Orca Client
 
-WebSocket client for connecting local laboratory devices to the [Swarm](https://cheshirelabs.io/docs/swarm/intro) device integration platform.
+Connects lab devices on this computer to an Orca runtime over WebSocket.
 
 ## Overview
 
-Swarm Client runs on computers physically connected to laboratory hardware and manages bidirectional communication with the Swarm platform via secure WebSocket connections. This enables remote control of lab devices through the Swarm API and MCP tools.
+Orca Client is the device bridge: it runs on the computer your instruments are plugged into. It loads a driver for each device in its config, connects to an Orca runtime, and runs the commands the runtime sends. The runtime can be a local daemon started with `orca start` or a hosted deployment.
 
-**Full documentation**: [cheshirelabs.io/docs/swarm/swarm-client](https://cheshirelabs.io/docs/swarm/swarm-client)
+**Full documentation**: [cheshirelabs.io/docs/orca/device-bridge](https://cheshirelabs.io/docs/orca/device-bridge)
 
 ## Quick Start
 
 ### Prerequisites
 
 - Python 3.10+
-- [Swarm API key](https://cheshirelabs.io/docs/swarm/getting-started)
+- An Orca runtime to connect to. For a local one, install [Orca](https://github.com/Cheshire-Labs/orca) and run `orca start`.
 
 ### Installation
 
+Install into a new virtual environment:
+
 ```bash
-git clone https://github.com/Cheshire-Labs/swarm-client.git
-cd swarm-client
+git clone https://github.com/Cheshire-Labs/orca-client.git
+cd orca-client
 python -m venv .venv
 .venv\Scripts\activate  # Windows
 # source .venv/bin/activate  # Linux/macOS
 pip install -e .
 ```
 
+pip also installs [cheshire-drivers](https://github.com/Cheshire-Labs/cheshire-drivers) from GitHub, at the release this version pins. cheshire-drivers installs a fork of PyLabRobot under the name `pylabrobot`, which replaces any upstream PyLabRobot already in the environment. That is why the environment should be a new one. The cheshire-drivers README explains the fork.
+
 ### Configuration
 
-Set your API key:
+Start a local Orca daemon on a port you choose:
 
 ```bash
-# Windows
-set SWARM_API_KEY=sk_swarm_your_api_key_here
-
-# Linux/macOS
-export SWARM_API_KEY=sk_swarm_your_api_key_here
+orca start --port 8765
 ```
 
-Create a `config.json` file. Here's a minimal example using simulation mode:
+The daemon performs no authentication: it accepts any API key. It listens on
+127.0.0.1 only, so run the client on the same computer and treat that computer
+as the trust boundary. See [SECURITY.md](SECURITY.md).
+
+Create a `config.json` file. This minimal example connects one simulated arm to that daemon:
 
 ```json
 {
@@ -46,12 +50,11 @@ Create a `config.json` file. Here's a minimal example using simulation mode:
   "site": "test",
   "lab": "simulation",
   "platform": {
-    "url": "wss://swarm.cheshirelabs.io/ws/devices",
-    "api_key": "${SWARM_API_KEY}"
+    "url": "ws://127.0.0.1:8765/ws/devices",
+    "api_key": "local"
   },
   "devices": [
     {
-      "device_id": "sim-transporter",
       "type": "transporter",
       "name": "Simulated Arm",
       "driver": { "type": "sim" }
@@ -60,18 +63,20 @@ Create a `config.json` file. Here's a minimal example using simulation mode:
 }
 ```
 
-For real hardware configuration, see the [configuration docs](https://cheshirelabs.io/docs/swarm/swarm-client).
+To connect to a hosted deployment instead, set `url` to its `wss://` address and `api_key` to the key it issued you.
+
+For real hardware configuration, see the [configuration docs](https://cheshirelabs.io/docs/orca/device-bridge).
 
 ### Run
 
 ```bash
-python -m swarm_client --config config.json
+python -m orca_client --config config.json
 # Add --verbose for debug logging
 ```
 
 ## Supported Devices
 
-See [supported devices](https://cheshirelabs.io/docs/swarm/devices) for the full list of compatible hardware.
+See [supported devices](https://cheshirelabs.io/docs/orca/devices) for the full list of compatible hardware.
 
 ## Development
 
@@ -83,21 +88,28 @@ pip install -e ".[dev]"
 pytest
 
 # Type checking
-mypy src/swarm_client
+mypy src/orca_client
 
 # Format code
-black src/swarm_client
+black src/orca_client
 ```
 
 ## Resources
 
-- **Documentation**: [cheshirelabs.io/docs/swarm](https://cheshirelabs.io/docs/swarm/intro)
-- **Troubleshooting**: [cheshirelabs.io/docs/swarm/troubleshooting](https://cheshirelabs.io/docs/swarm/troubleshooting)
-- **Issues**: [GitHub Issues](https://github.com/Cheshire-Labs/swarm-client/issues)
+- **Documentation**: [cheshirelabs.io/docs/orca/device-bridge](https://cheshirelabs.io/docs/orca/device-bridge)
+- **Issues**: [GitHub Issues](https://github.com/Cheshire-Labs/orca-client/issues)
+
+## Contributing
+
+See [CONTRIBUTING](./CONTRIBUTING) for how contributions reach this repository.
+
+Contributors must sign the [Cheshire Labs Contributor Agreement](https://cla-assistant.io/Cheshire-Labs/orca-client), which assigns copyright in the contribution to Cheshire Labs.
 
 ## License
 
-[AGPL-3.0-only](LICENSE)
+Source-available under the [Server Side Public License v1 (SSPL-1.0)](LICENSE)
+from 1.0.0 onward. Earlier releases were AGPL-3.0.
+[NOTICE](./NOTICE) names the copyright holder.
 
 ## Acknowledgments
 
