@@ -13,7 +13,7 @@ Orca Client is the device bridge: it runs on the computer your instruments are p
 ### Prerequisites
 
 - Python 3.10+
-- An Orca runtime to connect to. For a local one, install [Orca](https://github.com/Cheshire-Labs/orca) and run `orca start`.
+- An Orca runtime to connect to. This package does not install one. The runtime is a separate package, [Orca](https://github.com/Cheshire-Labs/orca), and on a real deployment the two usually run on different computers. For a local runtime, see [Running a local runtime](#running-a-local-runtime).
 
 ### Installation
 
@@ -30,19 +30,25 @@ pip install -e .
 
 pip also installs [cheshire-drivers](https://github.com/Cheshire-Labs/cheshire-drivers) from GitHub, at the release this version pins. cheshire-drivers installs a fork of PyLabRobot under the name `pylabrobot`, which replaces any upstream PyLabRobot already in the environment. That is why the environment should be a new one. The cheshire-drivers README explains the fork.
 
-### Configuration
+### Running a local runtime
 
-Start a local Orca daemon on a port you choose:
+The install above puts the bridge in this environment, not the runtime, so `orca` is not on this PATH. The two are separate packages because they usually run on separate computers. For a local runtime, install [Orca](https://github.com/Cheshire-Labs/orca) into a second virtual environment, following its README, and run it from a second shell:
 
 ```bash
+# Second shell, second virtual environment: the runtime, not the bridge.
 orca start --port 8765
+orca topology mount topology:build_topology
 ```
 
+`orca start` leaves the daemon idle. It accepts bridge connections right away, but it has no devices until a topology is mounted, and the topology is what the bridge's devices bind to. `topology:build_topology` names a `build_topology` function in a `topology.py` the daemon can import; writing one is covered by the Orca docs.
+
 The daemon performs no authentication: it accepts any API key. It listens on
-127.0.0.1 only, so run the client on the same computer and treat that computer
+127.0.0.1 only, so run the bridge on the same computer and treat that computer
 as the trust boundary. See [SECURITY.md](SECURITY.md).
 
-Create a `config.json` file. This minimal example connects one simulated arm to that daemon:
+### Configuration
+
+Create a `config.json` file. This minimal example connects one simulated shaker to that daemon:
 
 ```json
 {
@@ -55,19 +61,23 @@ Create a `config.json` file. This minimal example connects one simulated arm to 
   },
   "devices": [
     {
-      "type": "transporter",
-      "name": "Simulated Arm",
+      "type": "shaker",
+      "name": "shaker_1",
       "driver": { "type": "sim" }
     }
   ]
 }
 ```
 
+Each device `name` is the binding key. The runtime binds the device to the topology declaration carrying the same name, so `"name": "shaker_1"` needs a topology that declares `Shaker("shaker_1")`. A name the topology does not declare still connects: the runtime accepts the bridge, logs that the device is not declared, and cannot schedule it in a workflow. Nothing comes back to the bridge either way, so it reports a healthy connection and the runtime's log is where the mismatch shows.
+
 To connect to a hosted deployment instead, set `url` to its `wss://` address and `api_key` to the key it issued you.
 
 For real hardware configuration, see the [configuration docs](https://cheshirelabs.io/docs/orca/device-bridge).
 
 ### Run
+
+Back in the first shell, the one with this package installed:
 
 ```bash
 python -m orca_client --config config.json

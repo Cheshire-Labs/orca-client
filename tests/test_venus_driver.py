@@ -8,14 +8,18 @@ filepaths come from a ``VenusConfig`` block on ``DriverConfig.venus``.
 """
 
 import pytest
+from pydantic import JsonValue
 
-from cheshire_drivers import VenusProtocolDriver
+from cheshire_drivers import SimulationVenusProtocolDriver, VenusProtocolDriver
+from cheshire_drivers.gateway_protocol import CommandMessage
 from orca_client.config.models import (
     DeviceConfig,
     DriverConfig,
+    OpentronsSimServerConfig,
     VenusConfig,
 )
-from orca_client.devices import DeviceFactory
+from orca_client.devices import DeviceFactory, DeviceRegistry
+from orca_client.executor import CommandExecutor
 
 
 class TestVenusFactoryWiring:
@@ -104,3 +108,57 @@ class TestVenusFactoryWiring:
         factory = DeviceFactory()
         driver = factory.create_driver(config)
         assert isinstance(driver, VenusProtocolDriver)
+
+
+def _venus_config() -> DeviceConfig:
+    return DeviceConfig(
+        type="liquid_handler",
+        name="ml_star",
+        driver=DriverConfig(
+            type="venus",
+            venus=VenusConfig(placed_protocol="Placed.hsl", picked_protocol="Picked.hsl"),
+        ),
+    )
+
+
+async def _registry_for(config: DeviceConfig) -> DeviceRegistry:
+    factory = DeviceFactory()
+    registry = DeviceRegistry()
+    registry.register(
+        name=config.name,
+        device_type=config.type,
+        driver=factory.create_driver(config),
+        sim_driver=factory.create_sim_driver(config),
+    )
+    return registry
+
+
+class TestVenusInDeviceSim:
+    """DEVICE_SIM runs the Venus commands against Orca's Venus simulator, never HxRun."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("command, params", [
+        ("run_protocol", {"protocol_filepath": "AddBuffer.hsl", "params": {"vol": 50}}),
+        ("notify_placed", {"labware_name": "plate_1", "labware_type": "Cos_96_Rd", "site": "sample_site"}),
+        ("notify_picked", {"labware_name": "plate_1", "labware_type": "Cos_96_Rd", "site": "sample_site"}),
+    ])
+    async def test_a_venus_command_in_device_sim_runs_on_the_venus_simulator(
+        self, command: str, params: dict[str, JsonValue],
+    ) -> None:
+        registry = await _registry_for(_venus_config())
+        assert isinstance(registry.get_sim_driver("ml_star"), SimulationVenusProtocolDriver)
+
+        response = await CommandExecutor(registry).execute(CommandMessage(
+            command_id="c1", device_name="ml_star", command=command,
+            params=params, effective_mode="DEVICE_SIM",
+        ))
+
+        assert response.success, response.error
+
+    def test_a_venus_declaring_a_sim_server_is_refused(self) -> None:
+        """sim_server boots an Opentrons robot-server; a Venus has no use for one."""
+        config = _venus_config()
+        config.driver.sim_server = OpentronsSimServerConfig(interpreter="python", cwd=".", simulator_config="sim.json")
+
+        with pytest.raises(ValueError, match="sim_server is only valid"):
+            DeviceFactory().create_sim_driver(config)

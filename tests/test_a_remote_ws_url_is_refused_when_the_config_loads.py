@@ -1,6 +1,6 @@
-"""A plain ws:// URL to another host is refused when the config loads, so the agent never starts.
+"""A URL that can never work is refused when the config loads, so the agent never starts.
 
-The check used to run inside each dial, where a failure counts as a dropped
+The checks used to run inside each dial, where a failure counts as a dropped
 connection: the agent logged it and redialed forever.
 """
 
@@ -22,6 +22,19 @@ def _config(tmp_path: Path, url: str) -> str:
         "devices": [],
     }))
     return str(path)
+
+
+@pytest.mark.parametrize("url, complaint", [
+    ("http://127.0.0.1:8765/ws/devices", "must start with ws:// or wss://"),
+    ("https://gateway.example.com/ws/devices", "must start with ws:// or wss://"),
+    ("127.0.0.1:8765/ws/devices", "must start with ws:// or wss://"),
+    ("ws:///ws/devices", "names no host"),
+])
+def test_a_url_that_is_not_a_websocket_url_is_refused(
+    tmp_path: Path, url: str, complaint: str
+) -> None:
+    with pytest.raises(ValueError, match=complaint):
+        load_config(_config(tmp_path, url))
 
 
 def test_a_ws_url_to_another_host_is_refused(tmp_path: Path) -> None:

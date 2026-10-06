@@ -73,15 +73,9 @@ def load_client_config(config_path: str) -> ClientConfig:
     url = _expand_env_vars(platform_data.get("url", ""), config_path) or os.getenv("ORCA_CLIENT_URL", "")
     api_key = _expand_env_vars(platform_data.get("api_key", ""), config_path) or os.getenv("ORCA_CLIENT_API_KEY", "")
 
-    platform = PlatformConfig(
-        url=url,
-        api_key=api_key,
-        # Optional fields - only pass if explicitly set, otherwise use model defaults
-        **_optional_platform_fields(platform_data)
-    )
-
-    # Validate required fields
-    if not platform.url:
+    # Before the models, so a url nobody set is reported as the missing setting
+    # it is rather than as a url the models cannot parse.
+    if not url:
         raise ValueError(
             "url is required.\n"
             f"Add 'url' to the 'platform' section in {config_path}:\n"
@@ -89,13 +83,20 @@ def load_client_config(config_path: str) -> ClientConfig:
             "Or set the ORCA_CLIENT_URL environment variable."
         )
 
-    if not platform.api_key:
+    if not api_key:
         raise ValueError(
             "api_key is required.\n"
             f"Add 'api_key' to the 'platform' section in {config_path}:\n"
             '  "platform": { "url": "...", "api_key": "your-api-key" }\n'
             "Or set the ORCA_CLIENT_API_KEY environment variable."
         )
+
+    platform = PlatformConfig(
+        url=url,
+        api_key=api_key,
+        # Optional fields - only pass if explicitly set, otherwise use model defaults
+        **_optional_platform_fields(platform_data)
+    )
 
     # Build full config - let Pydantic validate the rest
     return ClientConfig(

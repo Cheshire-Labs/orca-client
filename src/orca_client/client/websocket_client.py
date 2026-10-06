@@ -17,6 +17,7 @@ from cheshire_drivers.gateway_protocol import (
     MessageEnvelope, ConnectMessage, CommandMessage, CancelMessage,
     ResponseMessage, StatusMessage, HeartbeatMessage, PROTOCOL_VERSION
 )
+from ..config.logging_setup import log_known_failure
 from ..executor import CommandCancelled, CommandExecutor
 from ..config.models import ClientConfig
 
@@ -100,11 +101,13 @@ class WebSocketClient:
     async def start(self) -> None:
         """Start the WebSocket client with automatic reconnection.
 
-        Reconnects on transient errors (network drops, timeouts). Stops
-        on permanent rejections (close code 1002 contract collision, close
-        code 1008 or HTTP 401/403 auth failure): retrying those will loop
-        forever because the operator has to fix something on-prem (config,
-        driver class, API key) before the platform will accept the connection.
+        Reconnects on transient errors: a network drop, a timeout, a runtime
+        that is not listening yet or is restarting. Stops on permanent
+        rejections (a URL that is not a WebSocket URL, close code 1002
+        contract collision, close code 1008 or HTTP 401/403 auth failure):
+        retrying those will loop forever because the operator has to fix
+        something on-prem (config, driver class, API key) before the platform
+        will accept the connection.
         """
         self._running = True
         self._wake.clear()
@@ -140,6 +143,21 @@ class WebSocketClient:
                     break
                 logger.error(f"Connection error: {e}")
 
+            except websockets.exceptions.InvalidURI as e:
+                self._give_up(
+                    f"{e}. Fix platform.url in the config and restart the client."
+                )
+                break
+
+            except OSError as unreachable:
+                # Nothing is listening, or the link is down. Retried on purpose:
+                # this process is expected to outlive a runtime that restarts.
+                log_known_failure(
+                    logger,
+                    f"Could not reach the Orca runtime at {self.config.platform.url}: "
+                    f"{unreachable}. Is it running?",
+                )
+
             except Exception as e:
                 logger.error(f"Connection error: {e}", exc_info=True)
 
@@ -158,7 +176,7 @@ class WebSocketClient:
 
     def _give_up(self, reason: str) -> None:
         """Stop redialing and record why, for the operator."""
-        logger.error("Connection refused permanently by platform. Stopping. %s", reason)
+        logger.error("Stopping instead of redialing. %s", reason)
         self._running = False
         self._stopped_because = reason
 
@@ -328,6 +346,11 @@ class WebSocketClient:
 
         except asyncio.CancelledError:
             logger.debug("Heartbeat loop cancelled")
+            raise
+        except websockets.exceptions.ConnectionClosed:
+            # The platform going away mid-heartbeat is ordinary. start() decides
+            # whether to redial, and a trace here would bury its line.
+            logger.info("Connection closed while sending a heartbeat")
             raise
         except Exception as e:
             logger.error(f"Heartbeat error: {e}", exc_info=True)
