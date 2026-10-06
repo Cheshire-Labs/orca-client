@@ -7,7 +7,7 @@ import logging
 from pathlib import Path
 
 from . import __version__
-from .config import setup_logging
+from .config import log_known_failure, setup_logging
 from .session import ClientSession
 
 logger = logging.getLogger("orca_client")
@@ -21,6 +21,13 @@ async def async_main(args: argparse.Namespace) -> int:
     """
     try:
         session = ClientSession.from_config_path(args.config)
+    except (FileNotFoundError, ValueError) as rejected:
+        # Everything the config and driver layers refuse is raised with a message
+        # written for the operator, so the message is the whole report.
+        log_known_failure(logger, str(rejected))
+        return 1
+
+    try:
         await session.run()
         return 0
 

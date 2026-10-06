@@ -12,7 +12,7 @@ import inspect
 import logging
 from dataclasses import dataclass
 from typing import Any, Callable
-from ..config.models import ArmConfig, DeviceConfig
+from ..config.models import ArmConfig, DeviceConfig, VenusConfig
 
 from cheshire_drivers import (
     BaseDriver,
@@ -23,6 +23,7 @@ from cheshire_drivers import (
     PLRThermocyclerBackendWrapper,
     PLRTransporterBackendWrapper,
     PLRLiquidHandlerWrapper,
+    SimulationVenusProtocolDriver,
     VenusProtocolDriver,
 )
 from cheshire_drivers.interfaces import ILiquidHandlerDriver
@@ -231,15 +232,17 @@ class DeviceFactory:
         ``effective_mode=DEVICE_SIM``), or None to fall back to the generic
         in-process Sim*Driver.
 
-        Only a liquid handler declaring ``driver.sim_server`` gets one: its driver
-        binds to an auto-booted Opentrons robot-server, so a DEVICE_SIM command
-        exercises the vendor stack rather than the print-only in-process sim. That
-        server is reached at a host/port, so a backend that has no such form (a
-        USB-connected STAR) is rejected rather than handed an endpoint it cannot take.
+        Two cases get one. A ``venus`` device gets the Venus simulator, which
+        logs each method it would run and never starts HxRun. A liquid handler
+        declaring ``driver.sim_server`` gets a driver bound to an auto-booted
+        Opentrons robot-server, so a DEVICE_SIM command exercises the vendor stack
+        rather than the print-only in-process sim. That server is reached at a
+        host/port, so any other device declaring one (a Venus, a USB-connected
+        STAR) is rejected rather than handed an endpoint it cannot take.
         """
         sim = config.driver.sim_server
         if sim is None:
-            return None
+            return self._create_venus_sim_driver(config) if config.driver.type == "venus" else None
         if config.type != "liquid_handler" or config.driver.type != "plr" or not config.driver.backend:
             raise ValueError(
                 f"sim_server is only valid on a 'plr' liquid_handler with a backend "
@@ -382,13 +385,7 @@ class DeviceFactory:
         defaults but the per-event protocol fields remain empty so events
         like ``prepare_for_pick`` are no-ops.
         """
-        if config.type != "liquid_handler":
-            raise ValueError(
-                f"Venus driver requires device type 'liquid_handler', "
-                f"got {config.type!r} for device {config.name!r}"
-            )
-        from ..config.models import VenusConfig
-        venus = config.driver.venus or VenusConfig()
+        venus = self._venus_config(config)
         return VenusProtocolDriver(
             name=config.name,
             init_protocol=venus.init_protocol,
@@ -401,3 +398,27 @@ class DeviceFactory:
             exe_path=venus.exe_path,
             methods_folder=venus.methods_folder,
         )
+
+    def _create_venus_sim_driver(self, config: DeviceConfig) -> BaseDriver:
+        """Orca's own Venus simulator. It logs each method it would run and never starts HxRun."""
+        venus = self._venus_config(config)
+        return SimulationVenusProtocolDriver(
+            name=config.name,
+            init_protocol=venus.init_protocol,
+            picked_protocol=venus.picked_protocol,
+            placed_protocol=venus.placed_protocol,
+            prepare_pick_protocol=venus.prepare_pick_protocol,
+            prepare_place_protocol=venus.prepare_place_protocol,
+            open_protocol=venus.open_protocol,
+            close_protocol=venus.close_protocol,
+            exe_path=venus.exe_path,
+            methods_folder=venus.methods_folder,
+        )
+
+    def _venus_config(self, config: DeviceConfig) -> VenusConfig:
+        if config.type != "liquid_handler":
+            raise ValueError(
+                f"Venus driver requires device type 'liquid_handler', "
+                f"got {config.type!r} for device {config.name!r}"
+            )
+        return config.driver.venus or VenusConfig()

@@ -31,6 +31,18 @@ def get_log_directory() -> Path:
     return log_dir
 
 
+def log_known_failure(logger: logging.Logger, message: str) -> None:
+    """Report a failure whose message already says what to fix, with no traceback.
+
+    The trace for these is fifteen frames of asyncio and websockets internals,
+    which buries the one line the operator has to read. ``--verbose`` keeps it.
+    """
+    if logger.isEnabledFor(logging.DEBUG):
+        logger.error(message, exc_info=True)
+    else:
+        logger.error(message)
+
+
 def setup_logging(verbose: bool = False) -> logging.Logger:
     """Setup logging with rotating file handler.
 

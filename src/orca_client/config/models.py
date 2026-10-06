@@ -183,6 +183,23 @@ class PlatformConfig(BaseModel):
 
     @field_validator("url")
     @classmethod
+    def _must_be_a_websocket_url(cls, url: str) -> str:
+        """Refuse a URL no dial could ever accept, here rather than once per redial."""
+        parsed = urlparse(url)
+        if parsed.scheme not in ("ws", "wss"):
+            raise ValueError(
+                f"The platform url must start with ws:// or wss://. It is {url!r}. "
+                f"A local Orca runtime listens at ws://127.0.0.1:<port>/ws/devices."
+            )
+        if not parsed.hostname:
+            raise ValueError(
+                f"The platform url names no host: {url!r}. "
+                f"A local Orca runtime listens at ws://127.0.0.1:<port>/ws/devices."
+            )
+        return url
+
+    @field_validator("url")
+    @classmethod
     def _remote_hosts_need_wss(cls, url: str) -> str:
         """Refuse plain ws:// to another host here, so the agent never starts rather than redialing forever."""
         parsed = urlparse(url)
