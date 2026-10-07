@@ -105,7 +105,8 @@ class DriverConfig(BaseModel):
     type; mode routing, command capture and the registry handshake are
     unchanged.
     """
-    type: Literal["plr", "venus", "sim", "lab_sim"]
+    # "human": a person moves the plates, prompted in this terminal. Transporters only.
+    type: Literal["plr", "venus", "sim", "lab_sim", "human"]
     # A PyLabRobot backend class name ("STARBackend", "OpentronsOT2Backend"), or a device
     # name the factory maps to a concrete driver ("OpentronsFlex"). See the factory's map.
     backend: Optional[str] = None
@@ -151,6 +152,15 @@ class DeviceConfig(BaseModel):
         default_factory=list,
         description="Pre-armed faults applied to the device's sim driver (lab_sim driver type only).",
     )
+
+    @model_validator(mode="after")
+    def _human_only_on_a_transporter(self):
+        if self.driver.type == "human" and self.type != "transporter":
+            raise ValueError(
+                f"DeviceConfig {self.name!r}: the human driver is only valid on a "
+                f"transporter, not a {self.type}"
+            )
+        return self
 
     @model_validator(mode="after")
     def _faults_only_on_lab_sim(self):
