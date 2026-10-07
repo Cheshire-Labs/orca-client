@@ -4,7 +4,7 @@ Connects lab devices on this computer to an Orca runtime over WebSocket.
 
 ## Overview
 
-Orca Client is the device bridge: it runs on the computer your instruments are plugged into. It loads a driver for each device in its config, connects to an Orca runtime, and runs the commands the runtime sends. The runtime can be a local daemon started with `orca start` or a hosted deployment.
+orca-client runs on the computer your instruments are plugged into. It loads a driver for each device in its config, connects to an Orca runtime, and runs the commands the runtime sends. The runtime can be a local daemon started with `orca start` or a hosted deployment.
 
 **Full documentation**: [cheshirelabs.io/docs/orca/device-bridge](https://cheshirelabs.io/docs/orca/device-bridge)
 
@@ -32,18 +32,18 @@ pip also installs [cheshire-drivers](https://github.com/Cheshire-Labs/cheshire-d
 
 ### Running a local runtime
 
-The install above puts the bridge in this environment, not the runtime, so `orca` is not on this PATH. The two are separate packages because they usually run on separate computers. For a local runtime, install [Orca](https://github.com/Cheshire-Labs/orca) into a second virtual environment, following its README, and run it from a second shell:
+The install above puts orca-client in this environment, not the runtime, so `orca` is not on this PATH. The two are separate packages because they usually run on separate computers. For a local runtime, install [Orca](https://github.com/Cheshire-Labs/orca) into a second virtual environment, following its README, and run it from a second shell:
 
 ```bash
-# Second shell, second virtual environment: the runtime, not the bridge.
+# Second shell, second virtual environment: the runtime, not orca-client.
 orca start --port 8765
 orca topology mount topology:build_topology
 ```
 
-`orca start` leaves the daemon idle. It accepts bridge connections right away, but it has no devices until a topology is mounted, and the topology is what the bridge's devices bind to. `topology:build_topology` names a `build_topology` function in a `topology.py` the daemon can import; writing one is covered by the Orca docs.
+`orca start` leaves the daemon idle. It accepts orca-client connections right away, but it has no devices until a topology is mounted, and the topology is what orca-client's devices bind to. `topology:build_topology` names a `build_topology` function in a `topology.py` the daemon can import; writing one is covered by the Orca docs.
 
 The daemon performs no authentication: it accepts any API key. It listens on
-127.0.0.1 only, so run the bridge on the same computer and treat that computer
+127.0.0.1 only, so run orca-client on the same computer and treat that computer
 as the trust boundary. See [SECURITY.md](SECURITY.md).
 
 ### Configuration
@@ -69,7 +69,9 @@ Create a `config.json` file. This minimal example connects one simulated shaker 
 }
 ```
 
-Each device `name` is the binding key. The runtime binds the device to the topology declaration carrying the same name, so `"name": "shaker_1"` needs a topology that declares `Shaker("shaker_1")`. A name the topology does not declare still connects: the runtime accepts the bridge, logs that the device is not declared, and cannot schedule it in a workflow. Nothing comes back to the bridge either way, so it reports a healthy connection and the runtime's log is where the mismatch shows.
+Each device `name` is the binding key. The runtime binds the device to the topology declaration carrying the same name, so `"name": "shaker_1"` needs a topology that declares `Shaker("shaker_1")`. A name the topology does not declare still connects: the runtime accepts orca-client, logs that the device is not declared, and cannot schedule it in a workflow. Nothing comes back to orca-client either way, so it reports a healthy connection and the runtime's log is where the mismatch shows.
+
+Every device the topology declares connects through orca-client. A person who moves plates is a `transporter` with `"driver": {"type": "human"}`: in LIVE, orca-client prompts in its terminal at each pick and place, so run it in a terminal you can type into.
 
 To connect to a hosted deployment instead, set `url` to its `wss://` address and `api_key` to the key it issued you.
 

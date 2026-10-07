@@ -26,8 +26,10 @@ from cheshire_drivers import (
     SimulationVenusProtocolDriver,
     VenusProtocolDriver,
 )
+from cheshire_drivers.human_transporter_driver import HumanTransporterDriver
 from cheshire_drivers.interfaces import ILiquidHandlerDriver
 from cheshire_drivers.plr import (
+    A4SSealerDriver,
     FlexLiquidHandlerDriver,
     OT2LiquidHandlerDriver,
     PreciseFlexTransporterDriver,
@@ -190,6 +192,18 @@ _CONCRETE_TRANSPORTER_BY_BACKEND: dict[str, Callable[[DeviceConfig], ITransporte
 }
 
 
+def _a4s(config: DeviceConfig) -> BaseDriver:
+    connection = config.driver.connection
+    if connection is None or connection.type != "serial" or connection.port is None:
+        raise ValueError(f"A4S sealer {config.name!r} needs a serial connection with a port")
+    return A4SSealerDriver(port=connection.port)
+
+
+_CONCRETE_SEALER_BY_BACKEND: dict[str, Callable[[DeviceConfig], BaseDriver]] = {
+    "A4SBackend": _a4s,
+}
+
+
 class DeviceFactory:
     """Creates driver instances from configuration."""
 
@@ -222,6 +236,8 @@ class DeviceFactory:
             return self._create_venus_driver(config)
         elif config.driver.type == "lab_sim":
             return self._create_lab_sim_driver(config)
+        elif config.driver.type == "human":
+            return self._create_human_driver(config)
         else:
             raise ValueError(f"Unknown driver type: {config.driver.type}")
 
@@ -309,6 +325,9 @@ class DeviceFactory:
             raise ValueError(f"Unknown device type for sim driver: {config.type}")
         return cls(config.name)
 
+    def _create_human_driver(self, config: DeviceConfig) -> ITransporterDriver:
+        return HumanTransporterDriver(config.name)
+
     def _create_plr_driver(self, config: DeviceConfig) -> BaseDriver | ITransporterDriver:
         """Create PyLabRobot driver."""
         backend_name = config.driver.backend
@@ -323,6 +342,10 @@ class DeviceFactory:
             build = _CONCRETE_TRANSPORTER_BY_BACKEND.get(backend_name)
             if build is not None:
                 return build(config)
+        if config.type == "sealer":
+            build_sealer = _CONCRETE_SEALER_BY_BACKEND.get(backend_name)
+            if build_sealer is not None:
+                return build_sealer(config)
 
         backend = self._create_plr_backend(config, backend_name)
 
