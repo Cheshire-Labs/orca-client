@@ -80,16 +80,6 @@ class DeviceRegistry:
         # CommandMessage carries effective_mode = DEVICE_SIM. Sharing the
         # same lock as the live driver keeps concurrent dispatch impossible
         # across modes.
-        #
-        # `lab_sim` interaction: a device registered with a `lab_sim`-built
-        # live driver (carrying a SleepSim(scale_factor=N) strategy) gets
-        # paired with a fresh default-strategy Sim* (instant-settle) here.
-        # DEVICE_SIM dispatch on this device therefore does NOT honor the
-        # configured scale_factor; only LIVE dispatch does. This is by
-        # design: DEVICE_SIM realism is the Sim*Driver's own concern, and a
-        # timed simulation drives its devices at LIVE. Documented here so a
-        # future debugger doesn't chase
-        # "why doesn't my scale_factor apply" under DEVICE_SIM.
         if sim_driver is None:
             sim_cls = SIM_DRIVER_CLS_BY_TYPE.get(device_type)
             if sim_cls is not None:

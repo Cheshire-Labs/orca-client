@@ -108,24 +108,6 @@ async def device_registry(
 
 
 @pytest.fixture
-def recorded_sleeps(monkeypatch: pytest.MonkeyPatch) -> list[float]:
-    """Record every ``asyncio.sleep`` duration and return instantly.
-
-    Timing tests assert on the *requested* sleep, not measured wall-clock, so
-    they stay deterministic and never flake under CI load.
-    """
-    durations: list[float] = []
-    real_sleep = asyncio.sleep
-
-    async def fake_sleep(delay: float) -> None:
-        durations.append(delay)
-        await real_sleep(0)
-
-    monkeypatch.setattr(asyncio, "sleep", fake_sleep)
-    return durations
-
-
-@pytest.fixture
 def wait_until() -> Callable[..., Awaitable[None]]:
     """Return ``await wait_until(pred, timeout=...)``: drive the event loop until
     ``pred()`` (sync or async) is truthy.

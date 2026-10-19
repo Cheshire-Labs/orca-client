@@ -20,7 +20,7 @@ from orca_client.devices.factory import DeviceFactory
 def _lab_sim_config(faults: list[FaultSpec] | None = None) -> DeviceConfig:
     return DeviceConfig(
         type="shaker", name="s1",
-        driver=DriverConfig(type="lab_sim", scale_factor=0.0),
+        driver=DriverConfig(type="lab_sim"),
         faults=faults or [],
     )
 

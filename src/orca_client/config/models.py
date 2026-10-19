@@ -97,13 +97,11 @@ class DriverConfig(BaseModel):
     position_ids to fully-flattened Teachpoint values and pushes them
     over the wire; orca-client never holds a local teachpoint registry.
 
-    The ``lab_sim`` driver type builds a cheshire-drivers ``Sim*Driver``
-    with a ``SleepSim(scale_factor=...)`` strategy, so a duration on the wire
-    (shake / centrifuge / seal) adds ``duration * scale_factor`` seconds to
-    the sim's own settle time. At the default ``scale_factor=0.0`` the
-    duration is ignored. It is set per device in place of any other driver
-    type; mode routing, command capture and the registry handshake are
-    unchanged.
+    The ``lab_sim`` driver type builds a cheshire-drivers ``Sim*Driver`` that
+    accepts pre-armed ``faults``. How long a simulated step lasts is orca's
+    per-run ``sim_time_scale``, not a driver setting. It is set per device in
+    place of any other driver type; mode routing, command capture and the
+    registry handshake are unchanged.
     """
     # "human": a person moves the plates, prompted in this terminal. Transporters only.
     type: Literal["plr", "venus", "sim", "lab_sim", "human"]
@@ -120,11 +118,6 @@ class DriverConfig(BaseModel):
     # Arm build (gripper geometry, rail). Only the arm backends read it; the defaults
     # match a standard-reach PreciseFlex with a single plate gripper.
     arm: Optional[ArmConfig] = None
-    # `lab_sim`-only: scale factor for `SleepSim` so duration parameters
-    # passed over the wire produce proportional real waits. 0.0 keeps the
-    # historical instant-settle behavior. Recommended values: 1.0 for
-    # real-time, 0.001 for compressed-realism tests.
-    scale_factor: float = 0.0
     # When set (Opentrons liquid handler), DEVICE_SIM boots this robot-server and drives
     # the vendor sim over it instead of the generic Sim*Driver. See OpentronsSimServerConfig.
     sim_server: Optional[OpentronsSimServerConfig] = None
