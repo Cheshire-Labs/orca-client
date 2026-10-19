@@ -33,11 +33,10 @@ from cheshire_drivers import (
 class SimDriverCtor(Protocol):
     """Structural type for a Sim*Driver constructor.
 
-    Sim* drivers accept ``cls(name)`` (no strategy/faults; instant-settle)
-    OR ``cls(name, sim_strategy=..., faults=...)`` (lab_sim configured
-    pacing + fault injection). Defaults are mandatory in the protocol so
-    the no-kwargs call site (the plain ``sim`` driver type) also
-    satisfies this type.
+    Sim* drivers accept ``cls(name)`` (the plain ``sim`` driver type) or
+    ``cls(name, faults=...)`` (``lab_sim``: the device's pre-armed faults).
+    Orca paces a simulated step; no driver setting does. Defaults are
+    mandatory in the protocol so the no-kwargs call site satisfies it too.
     """
 
     def __call__(

@@ -1,0 +1,36 @@
+name: Tests
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [main]
+
+jobs:
+  fast-tests:
+    name: Fast tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Draft PRs run zero CI no matter how many times they're pushed. Marking a
+    # PR ready (ready_for_review) is the trigger. Push to main always runs.
+    if: github.event_name == 'push' || github.event.pull_request.draft == false
+
+    steps:
+      - name: Check out orca-client
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+
+      # cheshire-drivers comes from the git tag pinned in pyproject.toml.
+      - name: Install orca-client
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run tests
+        run: pytest -v --tb=short

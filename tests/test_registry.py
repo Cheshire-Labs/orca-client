@@ -225,7 +225,7 @@ async def test_a_lab_sim_bench_reports_itself_connected_after_bring_up(
     config = DeviceConfig(
         type="shaker",
         name="lab_sim_shaker",
-        driver=DriverConfig(type="lab_sim", scale_factor=0.0),
+        driver=DriverConfig(type="lab_sim"),
     )
     registry = DeviceRegistry()
     driver = device_factory.create_driver(config)

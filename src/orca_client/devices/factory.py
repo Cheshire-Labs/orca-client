@@ -40,7 +40,6 @@ from cheshire_drivers.plr.opentrons_sim_server import (
     OpentronsSimServer,
     OpentronsSimServerSpec,
 )
-from cheshire_drivers.sims import SleepSim
 
 from .sim_driver_types import SIM_DRIVER_CLS_BY_TYPE
 
@@ -289,34 +288,11 @@ class DeviceFactory:
         )
 
     def _create_lab_sim_driver(self, config: DeviceConfig) -> BaseDriver | ITransporterDriver:
-        """Create a driver for a timed simulation.
-
-        Same Sim*Driver classes as `_create_sim_driver` but constructed
-        with a `SleepSim(scale_factor=...)` strategy so caller-supplied
-        durations (shake, seal, centrifuge) translate into proportional
-        real waits. The scale factor comes from `config.driver.scale_factor`
-        and defaults to 0.0 (instant settle, matching the plain `sim` type).
-
-        DEVICE_SIM dispatch caveat: ``DeviceRegistry.register()`` (in this
-        same package) lazily pairs every registered live driver with a
-        fresh ``Sim*Driver`` keyed by device type for DEVICE_SIM dispatch.
-        That paired driver is constructed with the default ``SleepSim()``
-        strategy (instant-settle) -- it does NOT inherit the
-        ``scale_factor`` configured here. So commands dispatched at
-        ``effective_mode=LIVE`` against a ``lab_sim``-configured device
-        honor scale_factor; commands at ``effective_mode=DEVICE_SIM`` do
-        not. That is by design: DEVICE_SIM realism is the cheshire-drivers
-        Sim*Driver's own concern, and a timed simulation drives its devices
-        at LIVE. Consumers wanting per-device-type
-        scale_factor on DEVICE_SIM dispatch should configure the device
-        for ``driver.type=lab_sim`` and submit workflows at
-        ``default_run_mode=LIVE``, not DEVICE_SIM.
-        """
+        """The same Sim*Driver as `_create_sim_driver`, with the device's pre-armed faults."""
         cls = SIM_DRIVER_CLS_BY_TYPE.get(config.type)
         if cls is None:
             raise ValueError(f"Unknown device type for lab_sim driver: {config.type}")
-        strategy = SleepSim(scale_factor=config.driver.scale_factor)
-        return cls(config.name, sim_strategy=strategy, faults=config.faults)
+        return cls(config.name, faults=config.faults)
 
     def _create_sim_driver(self, config: DeviceConfig) -> BaseDriver | ITransporterDriver:
         """Create simulation driver."""
