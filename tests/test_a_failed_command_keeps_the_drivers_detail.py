@@ -5,6 +5,7 @@ exception's payload. orca-client sent ``str(exc)``, so the gateway, the event
 log and the operator all got "Stall or Collision Detected" and nothing else.
 """
 
+from tests.no_assignment import build_nothing
 import json
 
 import pytest
@@ -14,8 +15,8 @@ from cheshire_drivers import SimShakerDriver
 from cheshire_drivers.gateway_protocol import CommandMessage, MessageEnvelope
 from orca_client.client.websocket_client import WebSocketClient
 from orca_client.config.models import ClientConfig
-from orca_client.devices import DeviceRegistry
-from orca_client.executor import CommandExecutor
+from cheshire_drivers.command_executor import DeviceRegistry
+from orca_client.executor import ClientCommandExecutor
 
 
 def _stall() -> OpentronsCommandError:
@@ -33,7 +34,7 @@ def _stall() -> OpentronsCommandError:
 
 
 def _shake_that_stalls(registry: DeviceRegistry) -> None:
-    driver = registry.get_driver("test_shaker")
+    driver = registry.get_sim_driver("test_shaker")
     assert driver is not None
 
     async def stall(*_args: float, **_kwargs: float) -> None:
@@ -48,7 +49,7 @@ def _shake_command() -> CommandMessage:
         device_name="test_shaker",
         command="shake",
         params={"speed": 300.0, "duration": 5.0},
-        effective_mode="LIVE",
+        effective_mode="SIM",
     )
 
 
@@ -58,7 +59,7 @@ async def test_the_axis_that_stalled_reaches_the_wire(
 ) -> None:
     _shake_that_stalls(device_registry)
 
-    response = await CommandExecutor(device_registry).execute(_shake_command())
+    response = await ClientCommandExecutor(device_registry).execute(_shake_command())
 
     assert response.success is False
     assert response.error is not None
@@ -73,7 +74,7 @@ async def test_the_error_type_still_names_the_exception_class(
     """The folded detail is extra text, not a change to what error_type means."""
     _shake_that_stalls(device_registry)
 
-    response = await CommandExecutor(device_registry).execute(_shake_command())
+    response = await ClientCommandExecutor(device_registry).execute(_shake_command())
 
     assert response.error_type == "OpentronsCommandError"
 
@@ -82,7 +83,7 @@ async def test_the_error_type_still_names_the_exception_class(
 async def test_an_ordinary_failure_still_reads_as_its_own_message(
     device_registry: DeviceRegistry,
 ) -> None:
-    driver = device_registry.get_driver("test_shaker")
+    driver = device_registry.get_sim_driver("test_shaker")
     assert driver is not None
 
     async def refuse(*_args: float, **_kwargs: float) -> None:
@@ -90,7 +91,7 @@ async def test_an_ordinary_failure_still_reads_as_its_own_message(
 
     setattr(driver, "shake", refuse)
 
-    response = await CommandExecutor(device_registry).execute(_shake_command())
+    response = await ClientCommandExecutor(device_registry).execute(_shake_command())
 
     assert response.error == "shaker lid is open"
 
@@ -117,7 +118,7 @@ async def test_a_property_that_raises_still_carries_the_detail(
         device_type="shaker",
         driver=_ShakerWithABadSensor("test_shaker"),
     )
-    client = WebSocketClient(client_config, CommandExecutor(registry))
+    client = WebSocketClient(client_config, ClientCommandExecutor(registry), apply_assignment=build_nothing)
     sent: list[str] = []
 
     class _Ws:

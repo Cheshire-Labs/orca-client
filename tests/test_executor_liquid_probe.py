@@ -10,8 +10,9 @@ it has no method for.
 import pytest
 
 from cheshire_drivers.liquid_handler_models import LiquidProbeRequest
-from orca_client.devices import DeviceRegistry
-from orca_client.executor import CommandExecutor
+from cheshire_drivers.command_executor import DeviceRegistry
+from orca_client.executor import ClientCommandExecutor
+from tests.command_params import deserialize
 
 
 class _StubProbingDriver:
@@ -24,12 +25,12 @@ class _StubBlindDriver:
     interfaces = frozenset({"ILiquidHandler"})
 
 
-def _executor() -> CommandExecutor:
-    return CommandExecutor(DeviceRegistry())
+def _executor() -> ClientCommandExecutor:
+    return ClientCommandExecutor(DeviceRegistry())
 
 
 def test_liquid_probe_wraps_into_request_model() -> None:
-    out = _executor()._deserialize_params(
+    out = deserialize(_executor(), 
         "liquid_probe",
         {"labware": "plate_1", "positions": ["B3"]},
         _StubProbingDriver(),
@@ -40,7 +41,7 @@ def test_liquid_probe_wraps_into_request_model() -> None:
 
 
 def test_a_container_probe_carries_its_channels() -> None:
-    out = _executor()._deserialize_params(
+    out = deserialize(_executor(), 
         "liquid_probe",
         {"labware": "trough_1", "use_channels": [0, 1]},
         _StubProbingDriver(),
@@ -54,14 +55,14 @@ def test_gate_requires_the_probe_interface() -> None:
     """A liquid handler with no sensor does not wrap the command; the flat dict
     passes through untouched rather than becoming a Request it cannot serve."""
     params = {"labware": "plate_1", "positions": ["B3"]}
-    out = _executor()._deserialize_params("liquid_probe", params, _StubBlindDriver())
+    out = deserialize(_executor(), "liquid_probe", params, _StubBlindDriver())
     assert out == params
     assert "request" not in out
 
 
 def test_unknown_probe_field_rejected() -> None:
     with pytest.raises(ValueError):
-        _executor()._deserialize_params(
+        deserialize(_executor(), 
             "liquid_probe",
             {"labware": "plate_1", "positions": ["B3"], "bogus": 1},
             _StubProbingDriver(),

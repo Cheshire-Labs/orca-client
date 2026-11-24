@@ -5,31 +5,37 @@ from typing import Literal
 import pytest
 from pylabrobot.sealing import A4SBackend
 
+from cheshire_drivers import SimTransporterDriver
 from cheshire_drivers.command_timings import collect_command_timings
+from cheshire_drivers.device_setup import DeviceSetup, RealDriverSetup, SerialConnection
+from cheshire_drivers.driver_lookup import check_device_setup
+from cheshire_drivers.gateway_protocol import AssignedDevice
 from cheshire_drivers.human_transporter_driver import HumanTransporterDriver
 from cheshire_drivers.plr import A4SSealerDriver
 from cheshire_drivers.move_parameters import SEED_MOVE_PARAMETERS
 from cheshire_drivers.transporter_models import PickAtCoordsRequest
 from cheshire_drivers.teachpoints import Teachpoint
 from cheshire_drivers import CartesianCoordinates
-from orca_client.config.models import ConnectionConfig, DeviceConfig, DriverConfig
 from orca_client.devices import DeviceFactory
 
 
 DeviceType = Literal["shaker", "sealer", "liquid_handler", "translator"]
 
 
-def _human() -> DeviceConfig:
-    return DeviceConfig(type="transporter", name="human_transfer", driver=DriverConfig(type="human"))
+def _human_setup() -> DeviceSetup:
+    return DeviceSetup(client="lab_pc", real=RealDriverSetup(type="human"))
+
+
+def _human() -> AssignedDevice:
+    return AssignedDevice(kind="transporter", name="human_transfer", setup=_human_setup())
 
 
 def test_a_human_transporter_is_prompted_in_live() -> None:
     assert isinstance(DeviceFactory().create_driver(_human()), HumanTransporterDriver)
 
 
-def test_a_human_transporter_is_not_prompted_in_device_sim() -> None:
-    """None means the registry pairs the plain simulated transporter, which does not prompt."""
-    assert DeviceFactory().create_sim_driver(_human()) is None
+def test_a_human_transporter_is_not_prompted_in_sim() -> None:
+    assert type(DeviceFactory().create_sim_driver(_human())) is SimTransporterDriver
 
 
 async def test_the_live_human_driver_names_the_site_in_its_prompt(
@@ -49,16 +55,16 @@ async def test_the_live_human_driver_names_the_site_in_its_prompt(
 
 @pytest.mark.parametrize("device_type", ["shaker", "sealer", "liquid_handler", "translator"])
 def test_a_human_driver_is_refused_on_anything_but_a_transporter(device_type: DeviceType) -> None:
-    with pytest.raises(ValueError, match="human"):
-        DeviceConfig(type=device_type, name="x", driver=DriverConfig(type="human"))
+    with pytest.raises(ValueError, match="person can only be a transporter"):
+        check_device_setup("x", device_type, _human_setup())
 
 
 def test_an_a4s_gets_the_driver_that_waits_out_a_seal_cycle() -> None:
-    config = DeviceConfig(
-        type="sealer", name="sealer_1",
-        driver=DriverConfig(
-            type="plr", backend="A4SBackend",
-            connection=ConnectionConfig(type="serial", port="COM3"),
+    config = AssignedDevice(
+        kind="sealer", name="sealer_1",
+        setup=DeviceSetup(
+            client="lab_pc",
+            real=RealDriverSetup(type="plr", backend="A4SBackend", connection=SerialConnection(type="serial", port="COM3")),
         ),
     )
     driver = DeviceFactory().create_driver(config)

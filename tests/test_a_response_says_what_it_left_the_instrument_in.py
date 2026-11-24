@@ -18,14 +18,14 @@ from cheshire_drivers.driver_errors import (
     InstrumentOutcome,
 )
 from cheshire_drivers.gateway_protocol import CommandMessage
-from orca_client.devices import DeviceRegistry
-from orca_client.executor import CommandExecutor
+from cheshire_drivers.command_executor import DeviceRegistry
+from orca_client.executor import ClientCommandExecutor
 
 
 def _cmd(command: str, params: dict | None = None, device: str = "test_shaker"):
     return CommandMessage(
         command_id="c1", device_name=device, command=command,
-        params=params or {}, effective_mode="LIVE",
+        params=params or {}, effective_mode="SIM",
     )
 
 
@@ -33,7 +33,7 @@ def _cmd(command: str, params: dict | None = None, device: str = "test_shaker"):
 async def test_a_successful_command_classifies_nothing(
     device_registry: DeviceRegistry,
 ) -> None:
-    response = await CommandExecutor(device_registry).execute(
+    response = await ClientCommandExecutor(device_registry).execute(
         _cmd("shake", {"speed": 300.0, "duration": 5.0}),
     )
 
@@ -57,7 +57,7 @@ async def test_a_command_this_agent_will_never_run_is_a_rejection(
     waiting changes nothing: a caller that treats them as "busy, ask again"
     spends its whole patience budget on a command that can never work.
     """
-    response = await CommandExecutor(device_registry).execute(
+    response = await ClientCommandExecutor(device_registry).execute(
         _cmd(command, device=device),
     )
 
@@ -73,7 +73,7 @@ async def test_a_payload_that_will_not_deserialize_is_a_refusal(
 ) -> None:
     """Wrapping a payload into a Request touches no hardware. It used to share
     a catch with the driver call, so the two could not be told apart."""
-    response = await CommandExecutor(device_registry).execute(
+    response = await ClientCommandExecutor(device_registry).execute(
         _cmd("shake", {"speed": "not a number", "duration": 5.0}),
     )
 
@@ -88,7 +88,7 @@ async def test_a_driver_failure_carries_what_the_driver_said(
 ) -> None:
     """A driver that ran and stopped part-way. The default has to be FAILED so
     an undeclared failure is never mistaken for a refusal."""
-    driver = device_registry.get_driver("test_shaker")
+    driver = device_registry.get_sim_driver("test_shaker")
     assert driver is not None
 
     async def _stalls(**_: object) -> None:
@@ -96,7 +96,7 @@ async def test_a_driver_failure_carries_what_the_driver_said(
 
     monkeypatch.setattr(driver, "shake", _stalls)
 
-    response = await CommandExecutor(device_registry).execute(
+    response = await ClientCommandExecutor(device_registry).execute(
         _cmd("shake", {"speed": 300.0, "duration": 5.0}),
     )
 
@@ -110,7 +110,7 @@ async def test_a_driver_refusal_reaches_the_wire_as_a_refusal(
 ) -> None:
     """The 2026-09-02 case: a handler refusing because a transfer is under way.
     Correct, actuated nothing, and it latched a device fault."""
-    driver = device_registry.get_driver("test_shaker")
+    driver = device_registry.get_sim_driver("test_shaker")
     assert driver is not None
 
     async def _busy(**_: object) -> None:
@@ -118,7 +118,7 @@ async def test_a_driver_refusal_reaches_the_wire_as_a_refusal(
 
     monkeypatch.setattr(driver, "shake", _busy)
 
-    response = await CommandExecutor(device_registry).execute(
+    response = await ClientCommandExecutor(device_registry).execute(
         _cmd("shake", {"speed": 300.0, "duration": 5.0}),
     )
 
@@ -132,7 +132,7 @@ async def test_a_driver_failure_keeps_the_detail_the_driver_had(
 ) -> None:
     """`explain_driver_error` folds a driver's structured detail into the text.
     It shipped with no caller, so the detail was still dropped here."""
-    driver = device_registry.get_driver("test_shaker")
+    driver = device_registry.get_sim_driver("test_shaker")
     assert driver is not None
 
     async def _chained(**_: object) -> None:
@@ -143,7 +143,7 @@ async def test_a_driver_failure_keeps_the_detail_the_driver_had(
 
     monkeypatch.setattr(driver, "shake", _chained)
 
-    response = await CommandExecutor(device_registry).execute(
+    response = await ClientCommandExecutor(device_registry).execute(
         _cmd("shake", {"speed": 300.0, "duration": 5.0}),
     )
 
@@ -159,7 +159,7 @@ async def test_a_bad_keyword_is_a_rejection_not_a_driver_failure(
     coroutine body never starts, so nothing was actuated. It used to land in
     the handler for a driver's own failure and fault a healthy instrument --
     reachable on every vendor extra, where params pass through unvalidated."""
-    driver = device_registry.get_driver("test_shaker")
+    driver = device_registry.get_sim_driver("test_shaker")
     assert driver is not None
     ran = False
 
@@ -169,7 +169,7 @@ async def test_a_bad_keyword_is_a_rejection_not_a_driver_failure(
 
     monkeypatch.setattr(driver, "shake", _records_that_it_ran)
 
-    response = await CommandExecutor(device_registry).execute(
+    response = await ClientCommandExecutor(device_registry).execute(
         _cmd("shake", {"speed": 1.0, "duration": 1.0, "not_a_kwarg": 2}),
     )
 
@@ -184,7 +184,7 @@ async def test_a_command_that_succeeded_never_faults_its_device(
 ) -> None:
     """The driver ran and finished. If we cannot project its answer that is
     our shape being wrong, not the instrument being left somewhere."""
-    executor = CommandExecutor(device_registry)
+    executor = ClientCommandExecutor(device_registry)
 
     def _cannot_project(*_: object, **__: object) -> object:
         raise ValueError("no response model for that shape")
@@ -209,14 +209,14 @@ async def test_a_property_read_that_raises_is_classified_not_escaped(
     and the exception left `execute` entirely; the reply that came back from
     the socket layer carried no outcome, which the control plane reads as a
     failure and faults a device nothing had touched."""
-    driver = device_registry.get_driver("test_shaker")
+    driver = device_registry.get_sim_driver("test_shaker")
 
     def _boom(_self: object) -> bool:
         raise RuntimeError("the link dropped mid-read")
 
     monkeypatch.setattr(type(driver), "is_initialized", property(_boom))
 
-    response = await CommandExecutor(device_registry).execute(
+    response = await ClientCommandExecutor(device_registry).execute(
         _cmd("is_initialized"),
     )
 

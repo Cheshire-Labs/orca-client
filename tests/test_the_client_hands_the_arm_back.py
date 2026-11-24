@@ -7,7 +7,7 @@ after the process exited: its `disconnect` is what drops them.
 
 import pytest
 from cheshire_drivers.sims import SimTransporterDriver
-from orca_client.devices.registry import DeviceRegistry
+from cheshire_drivers.command_executor import DeviceRegistry
 
 pytestmark = pytest.mark.asyncio
 

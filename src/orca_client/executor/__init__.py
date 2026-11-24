@@ -1,8 +1,5 @@
-"""Command execution package."""
+"""orca-client's use of the shared command executor."""
 
-from .executor import CommandCancelled, CommandExecutor
+from .client_executor import ClientCommandExecutor
 
-__all__ = [
-    "CommandExecutor",
-    "CommandCancelled",
-]
+__all__ = ["ClientCommandExecutor"]

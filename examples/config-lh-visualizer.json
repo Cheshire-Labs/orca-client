@@ -6,18 +6,13 @@
   "platform": {
     "url": "ws://localhost:8765/ws/devices",
     "api_key": "local",
-    "heartbeat_interval": 30.0,
-    "reconnect_backoff": [1, 2, 4, 8, 16, 30]
-  },
-  "devices": [
-    {
-      "type": "liquid_handler",
-      "name": "Test LH (Chatterbox Visualizer)",
-      "driver": {
-        "type": "plr",
-        "backend": "LiquidHandlerChatterboxBackend",
-        "deck_type": "STARLet"
-      }
-    }
-  ]
+    "reconnect_backoff": [
+      1,
+      2,
+      4,
+      8,
+      16,
+      30
+    ]
+  }
 }

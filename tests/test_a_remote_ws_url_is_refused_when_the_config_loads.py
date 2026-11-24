@@ -19,7 +19,6 @@ def _config(tmp_path: Path, url: str) -> str:
         "site": "test",
         "lab": "simulation",
         "platform": {"url": url, "api_key": "k"},
-        "devices": [],
     }))
     return str(path)
 

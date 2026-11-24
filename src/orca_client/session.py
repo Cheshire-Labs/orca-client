@@ -8,10 +8,14 @@ an exit that skips cleanup leaves them behind.
 import logging
 from pathlib import Path
 
+from cheshire_drivers.command_executor import DeviceRegistry
+from cheshire_drivers.gateway_protocol import AssignmentResult, DeviceAssignment
+from typing_extensions import Self
+
 from .client import WebSocketClient
 from .config import ClientConfig, load_config
-from .devices import DeviceFactory, DeviceRegistry
-from .executor import CommandExecutor
+from .devices import DeviceFactory
+from .executor import ClientCommandExecutor
 
 logger = logging.getLogger("orca_client.session")
 
@@ -23,34 +27,27 @@ class ClientSession:
         self.config = config
         self.registry = DeviceRegistry()
 
-        factory = DeviceFactory(enable_plr_visualizer=config.enable_plr_visualizer)
-        logger.info("Creating device drivers...")
-        for device_config in config.devices:
-            self.registry.register(
-                name=device_config.name,
-                device_type=device_config.type,
-                driver=factory.create_driver(device_config),
-                sim_driver=factory.create_sim_driver(device_config),
-            )
-            logger.info(f"  • {device_config.name} ({device_config.type})")
-
-        # Devices stay uninitialized here: the platform calls initialize() when
-        # it is ready, so it controls the timing and sees the status updates.
-        logger.info("Devices registered (not yet initialized - platform will call initialize)")
+        self._factory = DeviceFactory(machine=config.machine, enable_plr_visualizer=config.enable_plr_visualizer)
 
         # No client-side command timeout: the engine owns command duration
         # bounds and cancels via the wire.
-        self.executor = CommandExecutor(registry=self.registry)
-        self.client = WebSocketClient(config=config, executor=self.executor)
+        self.executor = ClientCommandExecutor(self.registry)
+        self.client = WebSocketClient(config=config, executor=self.executor, apply_assignment=self.apply_assignment)
+
+    async def apply_assignment(self, assignment: DeviceAssignment) -> AssignmentResult:
+        """Run exactly the assigned devices, and report what was built and what was not."""
+        errors = await self.registry.apply(assignment.devices, self._factory.create_drivers)
+        return AssignmentResult(
+            assignment_id=assignment.assignment_id, devices=self.registry.connect_info_list(), errors=errors,
+        )
 
     @classmethod
-    def from_config_path(cls, config_path: Path) -> "ClientSession":
+    def from_config_path(cls, config_path: Path) -> Self:
         """Load a config file and build a session from it."""
         resolved = config_path.resolve()
         logger.info(f"Loading configuration from {resolved}...")
         config = load_config(str(resolved))
         logger.info(f"Loaded configuration for client: {config.client_id}")
-        logger.info(f"Registered {len(config.devices)} device(s)")
         return cls(config)
 
     async def run(self) -> None:

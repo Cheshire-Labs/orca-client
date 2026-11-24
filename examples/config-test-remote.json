@@ -6,16 +6,13 @@
   "platform": {
     "url": "wss://your-deployment.example.com/ws/devices",
     "api_key": "${ORCA_CLIENT_API_KEY}",
-    "heartbeat_interval": 30.0,
-    "reconnect_backoff": [1, 2, 4, 8, 16, 30]
-  },
-  "devices": [
-    {
-      "type": "transporter",
-      "name": "PreciseFlex Simulator",
-      "driver": {
-        "type": "sim"
-      }
-    }
-  ]
+    "reconnect_backoff": [
+      1,
+      2,
+      4,
+      8,
+      16,
+      30
+    ]
+  }
 }

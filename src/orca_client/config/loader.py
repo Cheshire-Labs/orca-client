@@ -12,6 +12,8 @@ import json
 import re
 from pathlib import Path
 
+from cheshire_drivers.device_setup import MachineSetup
+
 from .models import ClientConfig, PlatformConfig
 
 
@@ -65,6 +67,13 @@ def load_client_config(config_path: str) -> ClientConfig:
     with open(config_path, 'r') as f:
         config_data = json.load(f)
 
+    if "devices" in config_data:
+        raise ValueError(
+            f"{config_path} lists devices. orca-client no longer does: each device is set up in "
+            f"devices/<name>.json on the server, and 'client' there names this PC's client_id. "
+            f"Move each device there and delete 'devices' from this file."
+        )
+
     # Get platform config from file (or empty dict if not present)
     platform_data = config_data.get("platform", {})
 
@@ -106,7 +115,7 @@ def load_client_config(config_path: str) -> ClientConfig:
         workcell=config_data.get("workcell"),
         enable_plr_visualizer=config_data.get("enable_plr_visualizer", False),
         platform=platform,
-        devices=config_data.get("devices", [])
+        machine=MachineSetup.model_validate(config_data.get("machine", {})),
     )
 
 
