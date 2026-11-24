@@ -10,11 +10,11 @@ import pytest
 from pydantic import ValidationError
 
 from cheshire_drivers import sims, plr_wrappers
-from orca_client.devices.registry import DeviceRegistry
+from cheshire_drivers.command_executor import DeviceRegistry
 from cheshire_drivers.gateway_protocol import (
-    ConnectMessage,
+    AssignmentResult,
     DeviceConnectInfo,
-    PROTOCOL_VERSION,
+    MessageEnvelope,
 )
 
 
@@ -73,13 +73,10 @@ class TestDeviceConnectInfoSchema:
         assert rehydrated == original
 
 
-class TestConnectMessageWithDeviceConnectInfo:
-    def test_connect_message_carries_typed_devices_list(self) -> None:
-        msg = ConnectMessage(
-            protocol_version=PROTOCOL_VERSION,
-            site="boston",
-            lab="molbio",
-            workcell=None,
+class TestAssignmentResultWithDeviceConnectInfo:
+    def test_assignment_result_carries_typed_devices_list(self) -> None:
+        msg = AssignmentResult(
+            assignment_id="a1",
             devices=[
                 DeviceConnectInfo(
                     name="shaker_1",
@@ -98,15 +95,9 @@ class TestConnectMessageWithDeviceConnectInfo:
         assert msg.devices[0].interfaces == frozenset({"IShaker"})
         assert msg.devices[1].provides_state is True
 
-    def test_connect_message_round_trip_via_envelope_payload(self) -> None:
-        # The websocket_client wraps ConnectMessage in an envelope via
-        # `model_dump()`; the receiver reconstructs via ConnectMessage(**payload).
-        # This test confirms that round-trip preserves the typed device list.
-        original = ConnectMessage(
-            protocol_version=PROTOCOL_VERSION,
-            site="boston",
-            lab="molbio",
-            workcell="wc1",
+    def test_assignment_result_round_trip_via_envelope_payload(self) -> None:
+        original = AssignmentResult(
+            assignment_id="a1",
             devices=[
                 DeviceConnectInfo(
                     name="lh_1",
@@ -116,9 +107,8 @@ class TestConnectMessageWithDeviceConnectInfo:
                 ),
             ],
         )
-        wire = original.model_dump(mode="json")
-        # frozenset serializes as list/array; ConnectMessage should still parse
-        rehydrated = ConnectMessage.model_validate(wire)
+        wire = MessageEnvelope.wrap_assignment_result(original).payload
+        rehydrated = AssignmentResult.model_validate(wire)
         assert rehydrated.devices[0].interfaces == frozenset(
             {"ILiquidHandler", "IProtocolRunner"}
         )

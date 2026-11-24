@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 from pydantic import JsonValue
 
+from cheshire_drivers.gateway_protocol import HEARTBEAT_INTERVAL_SECONDS
 from orca_client.config import load_config
 
 
@@ -15,12 +16,18 @@ def _config_path(tmp_path: Path, **overrides: JsonValue) -> Path:
         "site": "test",
         "lab": "simulation",
         "platform": {"url": "wss://orca.example.com/ws/devices", "api_key": "k"},
-        "devices": [],
     }
     data.update(overrides)
     path = tmp_path / "config.json"
     path.write_text(json.dumps(data))
     return path
+
+
+@pytest.mark.parametrize("devices", [[], [{"type": "shaker", "name": "shaker_1"}]])
+def test_a_config_listing_devices_is_refused_and_says_where_they_moved(tmp_path: Path, devices: JsonValue):
+    """A device listed here would otherwise be dropped with no word to the operator."""
+    with pytest.raises(ValueError, match="no longer does.*devices/<name>.json on the server"):
+        load_config(str(_config_path(tmp_path, devices=devices)))
 
 
 def test_enable_plr_visualizer_is_read_from_the_file(tmp_path: Path):
@@ -106,3 +113,12 @@ def test_a_refused_placeholder_names_the_file_it_came_from(
 
     with pytest.raises(ValueError, match="bench-01.json"):
         load_config(str(renamed))
+
+
+def test_a_heartbeat_interval_above_the_default_is_refused(tmp_path: Path):
+    """The server counts a client gone after three default intervals, so a longer one loses it on one missed beat."""
+    slower = HEARTBEAT_INTERVAL_SECONDS + 1
+    platform = {"url": "ws://127.0.0.1:8765/ws/devices", "api_key": "k", "heartbeat_interval": slower}
+
+    with pytest.raises(ValueError, match="heartbeat_interval"):
+        load_config(str(_config_path(tmp_path, platform=platform)))

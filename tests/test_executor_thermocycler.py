@@ -3,9 +3,9 @@
 Mirrors `test_executor_shaker.py` for the thermocycler category: dispatches
 thermocycler commands via CommandExecutor against a real SimThermocyclerDriver
 (which expects Pydantic Request models) with flat-dict params from the wire.
-Proves the executor routes thermocycler commands through
-`wrap_thermocycler_payload` only when the driver advertises `IThermocycler`,
-and leaves the payload untouched otherwise.
+Proves the executor reads a thermocycler command's request model from the command
+table only when the driver advertises `IThermocycler`, and leaves the payload
+untouched otherwise.
 """
 
 from typing import AsyncGenerator
@@ -14,8 +14,9 @@ import pytest
 
 from cheshire_drivers import SimThermocyclerDriver
 from cheshire_drivers.gateway_protocol import CommandMessage
-from orca_client.devices import DeviceRegistry
-from orca_client.executor import CommandExecutor
+from cheshire_drivers.command_executor import DeviceRegistry
+from orca_client.executor import ClientCommandExecutor
+from tests.command_params import deserialize
 
 
 _PROTOCOL_PARAMS = {
@@ -37,12 +38,13 @@ _PROTOCOL_PARAMS = {
 @pytest.fixture
 async def thermocycler_registry() -> AsyncGenerator[DeviceRegistry, None]:
     registry = DeviceRegistry()
+    live = SimThermocyclerDriver("test_thermocycler")
     registry.register(
         name="test_thermocycler",
         device_type="thermocycler",
-        driver=SimThermocyclerDriver("test_thermocycler"),
+        driver=live,
     )
-    await registry.initialize_all()
+    await live.initialize()
     yield registry
     await registry.cleanup_all()
 
@@ -54,7 +56,7 @@ class TestThermocyclerExecutor:
     async def test_run_protocol_with_dict_params_succeeds(
         self, thermocycler_registry: DeviceRegistry
     ) -> None:
-        executor = CommandExecutor(thermocycler_registry)
+        executor = ClientCommandExecutor(thermocycler_registry)
         cmd = CommandMessage(
             command_id="tc1",
             device_name="test_thermocycler",
@@ -69,7 +71,7 @@ class TestThermocyclerExecutor:
     async def test_get_lid_open_returns_typed_response(
         self, thermocycler_registry: DeviceRegistry
     ) -> None:
-        executor = CommandExecutor(thermocycler_registry)
+        executor = ClientCommandExecutor(thermocycler_registry)
         cmd = CommandMessage(
             command_id="tc2",
             device_name="test_thermocycler",
@@ -87,7 +89,7 @@ class TestThermocyclerExecutor:
     async def test_run_protocol_with_unknown_field_fails(
         self, thermocycler_registry: DeviceRegistry
     ) -> None:
-        executor = CommandExecutor(thermocycler_registry)
+        executor = ClientCommandExecutor(thermocycler_registry)
         cmd = CommandMessage(
             command_id="tc3",
             device_name="test_thermocycler",
@@ -104,9 +106,9 @@ class TestThermocyclerExecutor:
     ) -> None:
         """A thermocycler command on an IThermocycler driver is wrapped under
         the Request kwarg, so the flat wire dict becomes a Pydantic Request."""
-        executor = CommandExecutor(thermocycler_registry)
+        executor = ClientCommandExecutor(thermocycler_registry)
         driver = thermocycler_registry.get_driver("test_thermocycler")
-        wrapped = executor._deserialize_params("get_lid_open", {}, driver)
+        wrapped = deserialize(executor, "get_lid_open", {}, driver)
         assert set(wrapped.keys()) == {"request"}
 
     @pytest.mark.asyncio
@@ -117,17 +119,17 @@ class TestThermocyclerExecutor:
         IThermocycler (the shaker) must not be wrapped as a thermocycler
         Request: `_deserialize_params` returns the params unchanged, and the
         executor rejects the command as unsupported rather than mis-wrapping."""
-        executor = CommandExecutor(device_registry)
-        shaker = device_registry.get_driver("test_shaker")
+        executor = ClientCommandExecutor(device_registry)
+        shaker = device_registry.get_sim_driver("test_shaker")
         params = {"unrelated": 1}
-        assert executor._deserialize_params("get_lid_open", params, shaker) is params
+        assert deserialize(executor, "get_lid_open", params, shaker) == params
 
         cmd = CommandMessage(
             command_id="tc4",
             device_name="test_shaker",
             command="get_lid_open",
             params={},
-            effective_mode="LIVE",
+            effective_mode="SIM",
         )
         response = await executor.execute(cmd)
         assert response.success is False

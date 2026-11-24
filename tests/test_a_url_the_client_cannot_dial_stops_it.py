@@ -10,15 +10,17 @@ import asyncio
 
 from orca_client.client import WebSocketClient
 from orca_client.config.models import ClientConfig, PlatformConfig
-from orca_client.devices import DeviceRegistry
-from orca_client.executor import CommandExecutor
+from cheshire_drivers.command_executor import DeviceRegistry
+from orca_client.executor import ClientCommandExecutor
+from tests.no_assignment import build_nothing
 
 
 def _client_dialing(url: str, client_config: ClientConfig) -> WebSocketClient:
     platform = PlatformConfig(url=url, api_key="k", reconnect_backoff=[0.01])
     return WebSocketClient(
         config=client_config.model_copy(update={"platform": platform}),
-        executor=CommandExecutor(registry=DeviceRegistry()),
+        executor=ClientCommandExecutor(DeviceRegistry()),
+        apply_assignment=build_nothing,
     )
 
 

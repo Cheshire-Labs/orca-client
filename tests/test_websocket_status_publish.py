@@ -6,6 +6,7 @@ commands normally. Deleting a publish call is silent, so both call sites are
 pinned here rather than only the report that feeds them.
 """
 
+from tests.no_assignment import build_nothing
 import asyncio
 import json
 from collections.abc import Awaitable, Callable
@@ -16,9 +17,10 @@ import pytest
 from cheshire_drivers.gateway_protocol import CommandMessage, MessageEnvelope
 from orca_client.client.websocket_client import WebSocketClient
 from orca_client.config.models import ClientConfig
-from orca_client.devices import DeviceRegistry
+from cheshire_drivers.command_executor import DeviceRegistry
 from cheshire_drivers import SimShakerDriver
-from orca_client.executor import CommandCancelled, CommandExecutor
+from cheshire_drivers.command_executor import CommandCancelled
+from orca_client.executor import ClientCommandExecutor
 
 
 class _CapturingWs:
@@ -44,7 +46,7 @@ def _connected_client(
     if heartbeat_interval is not None:
         platform = config.platform.model_copy(update={"heartbeat_interval": heartbeat_interval})
         config = config.model_copy(update={"platform": platform})
-    client = WebSocketClient(config, CommandExecutor(registry))
+    client = WebSocketClient(config, ClientCommandExecutor(registry), apply_assignment=build_nothing)
     ws = _CapturingWs()
     monkeypatch.setattr(client, "ws", ws)
     monkeypatch.setattr(client, "_connected", True)

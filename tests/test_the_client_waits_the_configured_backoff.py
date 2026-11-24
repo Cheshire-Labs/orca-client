@@ -1,5 +1,6 @@
 """The client waits the delays in `platform.reconnect_backoff` between failed dials."""
 
+from tests.no_assignment import build_nothing
 import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable
 from types import TracebackType
@@ -11,8 +12,8 @@ from websockets.exceptions import ConnectionClosedError
 
 from orca_client.client import WebSocketClient
 from orca_client.config.models import ClientConfig, PlatformConfig
-from orca_client.devices import DeviceRegistry
-from orca_client.executor import CommandExecutor
+from cheshire_drivers.command_executor import DeviceRegistry
+from orca_client.executor import ClientCommandExecutor
 
 Outcome = Literal["refused", "clean close", "dropped"]
 
@@ -80,7 +81,7 @@ async def _waits_for(
     """Run the client against the script and return the first `count` delays it waited."""
     platform = client_config.platform.model_copy(update={"reconnect_backoff": [1.0, 2.0, 3.0]})
     config = client_config.model_copy(update={"platform": platform})
-    client = WebSocketClient(config=config, executor=CommandExecutor(registry=DeviceRegistry()))
+    client = WebSocketClient(config=config, executor=ClientCommandExecutor(DeviceRegistry()), apply_assignment=build_nothing)
     waited: list[float] = []
 
     async def record_the_wait(delay: float) -> None:

@@ -20,8 +20,8 @@ from cheshire_drivers.gateway_protocol import CommandMessage, ResponseMessage
 from cheshire_drivers.plr import FlexLiquidHandlerDriver
 from pylabrobot.opentrons import ChatterboxTransport
 
-from orca_client.devices import DeviceRegistry
-from orca_client.executor import CommandExecutor
+from cheshire_drivers.command_executor import DeviceRegistry
+from orca_client.executor import ClientCommandExecutor
 
 
 EIGHT_CHANNEL = ("p1000_multi_flex", 8, 5.0, 1000.0, "left")
@@ -42,7 +42,7 @@ async def _send(
 ) -> ResponseMessage:
     registry = DeviceRegistry()
     registry.register(name="flex_1", device_type="liquid_handler", driver=driver)
-    return await CommandExecutor(registry).execute(
+    return await ClientCommandExecutor(registry).execute(
         CommandMessage(
             command_id=f"c-{command}",
             device_name="flex_1",

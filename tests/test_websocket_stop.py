@@ -16,17 +16,21 @@ from websockets.exceptions import ConnectionClosedError, InvalidStatus
 from websockets.frames import Close
 from websockets.http11 import Response
 
+from cheshire_drivers.gateway_protocol import CLIENT_ID_IN_USE_CLOSE_CODE
+
 from orca_client.client import WebSocketClient
 from orca_client.config.models import ClientConfig
-from orca_client.devices import DeviceRegistry
-from orca_client.executor import CommandExecutor
+from cheshire_drivers.command_executor import DeviceRegistry
+from orca_client.executor import ClientCommandExecutor
+from tests.no_assignment import build_nothing
 
 
 def _client(client_config: ClientConfig, reconnect_delay: float = 30.0) -> WebSocketClient:
     platform = client_config.platform.model_copy(update={"reconnect_backoff": [reconnect_delay]})
     return WebSocketClient(
         config=client_config.model_copy(update={"platform": platform}),
-        executor=CommandExecutor(registry=DeviceRegistry()),
+        executor=ClientCommandExecutor(DeviceRegistry()),
+        apply_assignment=build_nothing,
     )
 
 
@@ -352,6 +356,28 @@ async def test_a_refused_protocol_version_stops_the_client_and_says_so(
     assert dial.dials == 1, "a permanent refusal must not be redialed"
     assert client.stopped_because is not None
     assert "1.1.0" in client.stopped_because
+
+
+async def test_a_client_id_still_in_use_is_redialed_not_given_up_on(
+    client_config: ClientConfig,
+    wait_until: Callable[..., Awaitable[None]],
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """After a network drop the server still holds the old socket until it notices, and refuses with 4409.
+
+    Giving up would leave the lab PC dark, so the client keeps redialing until the old socket is gone.
+    """
+    client = _client(client_config, reconnect_delay=0.01)
+    dial = _CountingDial(_SocketClosedAfterTheHandshake(Close(CLIENT_ID_IN_USE_CLOSE_CODE, "client id in use")))
+    monkeypatch.setattr(websockets, "connect", dial)
+
+    running = asyncio.create_task(client.start())
+    await wait_until(lambda: dial.dials >= 3)
+
+    assert client.is_running is True
+    assert client.stopped_because is None
+    await client.stop()
+    await asyncio.wait_for(running, timeout=2.0)
 
 
 async def test_a_clean_close_is_backed_off_rather_than_redialed_on_the_spot(

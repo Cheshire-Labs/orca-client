@@ -12,30 +12,57 @@ from urllib.parse import urlparse
 import websockets
 from websockets import ClientConnection
 
-from cheshire_drivers.driver_errors import explain_driver_error
+from cheshire_drivers.driver_errors import report_failure
+from pydantic import JsonValue, ValidationError
+
 from cheshire_drivers.gateway_protocol import (
-    MessageEnvelope, ConnectMessage, CommandMessage, CancelMessage,
-    ResponseMessage, StatusMessage, HeartbeatMessage, PROTOCOL_VERSION
+    AssignedDevice, AssignmentResult, ClientHello, CommandMessage, CancelMessage, DeviceAssignment,
+    HeartbeatMessage, MessageEnvelope, PROTOCOL_VERSION, ResponseMessage, StatusMessage,
 )
 from ..config.logging_setup import log_known_failure
-from ..executor import CommandCancelled, CommandExecutor
+from cheshire_drivers.command_executor import answer_command
+from ..executor import ClientCommandExecutor
 from ..config.models import ClientConfig
 
 logger = logging.getLogger("orca_client.client")
 
 
+
+def _read_assigned_devices(payload: dict[str, JsonValue]) -> tuple[list[AssignedDevice], dict[str, str]]:
+    """Each device read on its own, so one setup this client cannot read leaves the others running."""
+    raw = payload.get("devices")
+    if not isinstance(raw, list):
+        raise ValueError("an assignment must carry a devices list")
+    devices: list[AssignedDevice] = []
+    unreadable: dict[str, str] = {}
+    for item in raw:
+        try:
+            devices.append(AssignedDevice.model_validate(item))
+        except ValidationError as refused:
+            name = item.get("name") if isinstance(item, dict) else None
+            unreadable[str(name)] = f"orca-client could not read this device's setup: {refused}"
+    return devices, unreadable
+
+
 class WebSocketClient:
     """Manages the WebSocket connection to the gateway, with reconnection."""
 
-    def __init__(self, config: ClientConfig, executor: CommandExecutor):
+    def __init__(
+        self,
+        config: ClientConfig,
+        executor: ClientCommandExecutor,
+        apply_assignment: Callable[[DeviceAssignment], Awaitable[AssignmentResult]],
+    ):
         """Initialize WebSocket client.
 
         Args:
             config: Client configuration; `platform` sets the redial delays and heartbeat interval
             executor: Command executor for handling commands
+            apply_assignment: Builds the devices the platform assigns and reports what it built
         """
         self.config = config
         self.executor = executor
+        self._apply_assignment = apply_assignment
 
         self.ws: Optional[ClientConnection] = None
         self._connected = False
@@ -52,6 +79,7 @@ class WebSocketClient:
         # inline in the receive loop) so a cancel message can be read and acted
         # on while a long command is still running. Done tasks self-evict.
         self._command_tasks: set[asyncio.Task] = set()
+        self._assignment_lock = asyncio.Lock()
         # Serializes outbound frames: commands dispatch concurrently, so multiple
         # _handle_command tasks (and the heartbeat) can call _send at once, and
         # websockets' send() is not safe to interleave across coroutines.
@@ -102,16 +130,19 @@ class WebSocketClient:
         """Start the WebSocket client with automatic reconnection.
 
         Reconnects on transient errors: a network drop, a timeout, a runtime
-        that is not listening yet or is restarting. Stops on permanent
-        rejections (a URL that is not a WebSocket URL, close code 1002
-        contract collision, close code 1008 or HTTP 401/403 auth failure):
-        retrying those will loop forever because the operator has to fix
-        something on-prem (config, driver class, API key) before the platform
-        will accept the connection.
+        that is not listening yet or is restarting, or the platform still
+        holding this client ID's old socket. Stops on permanent rejections (a
+        URL that is not a WebSocket URL, close code 1002 version mismatch,
+        close code 1008 or HTTP 401/403 auth failure): retrying those will
+        loop forever because the operator has to fix something on-prem
+        before the platform will accept the connection.
         """
         self._running = True
         self._wake.clear()
         self._stopped_because = None
+        await self._run_until_stopped()
+
+    async def _run_until_stopped(self) -> None:
         # Waits since the last connection that opened; picks the reconnect_backoff entry.
         waits = 0
 
@@ -185,7 +216,7 @@ class WebSocketClient:
         """Operator-facing reason a refusal stopped the client.
 
         The close reason is the only place the platform names what it objected
-        to (the protocol version it expects, or the device it will not accept).
+        to (the protocol version it expects).
         """
         said = reason or "no reason given"
         if code == 1008:
@@ -195,10 +226,8 @@ class WebSocketClient:
             )
         return (
             f"The platform refused the connection (code {code}): {said}. "
-            f"The reason above names what it expects. Either the two builds "
-            f"disagree on the protocol version, in whichever direction, or a "
-            f"device's contract does not match the topology. Reconcile the two "
-            f"sides and restart."
+            f"The two builds disagree on the protocol version. Deploy matching "
+            f"builds and restart."
         )
 
     def _delay_after(self, waits: int) -> float:
@@ -283,11 +312,8 @@ class WebSocketClient:
             self.ws = ws
             logger.info("Connected to the Orca gateway")
 
-            # Send connection message
-            await self._send_connect_message()
+            await self._send_hello()
 
-            # Wait for connection acknowledgment
-            # (For MVP, we assume immediate connection)
             self._connected = True
             await self._notify_status("CONNECTED")
 
@@ -315,18 +341,51 @@ class WebSocketClient:
                 if error is not None:
                     raise error
 
-    async def _send_connect_message(self) -> None:
-        """Send initial connection message to platform."""
-        msg = ConnectMessage(
+    async def _send_hello(self) -> None:
+        """Tell the platform who this client is; it answers with the devices to run."""
+        msg = ClientHello(
             protocol_version=PROTOCOL_VERSION,
+            client_id=self.config.client_id,
             site=self.config.site,
             lab=self.config.lab,
             workcell=self.config.workcell,
-            devices=self.executor.registry.connect_info_list(),
         )
-        envelope = MessageEnvelope.wrap_connect(msg)
-        await self._send(envelope)
-        logger.info(f"Sent connection message for client: {self.config.client_id} (site={self.config.site}, lab={self.config.lab})")
+        await self._send(MessageEnvelope.wrap_hello(msg))
+        logger.info(f"Sent hello for client: {self.config.client_id} (site={self.config.site}, lab={self.config.lab})")
+
+    async def _handle_assignment(self, envelope: MessageEnvelope) -> None:
+        """Run the assigned devices, then tell the platform what was built. Assignments apply in the order they came."""
+        async with self._assignment_lock:
+            assignment_id = envelope.payload.get("assignment_id")
+            if not isinstance(assignment_id, str):
+                logger.error("An assignment came with no assignment_id, so it was not applied and cannot be answered.")
+                return
+            result = await self._build_assignment(assignment_id, envelope.payload)
+            try:
+                await self._send(MessageEnvelope.wrap_assignment_result(result))
+                await self.publish_device_status()
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                logger.error(f"Could not report an assignment's result: {e}", exc_info=True)
+
+    async def _build_assignment(self, assignment_id: str, payload: dict[str, JsonValue]) -> AssignmentResult:
+        """What was built. An assignment that fails as a whole still gets a result, naming the error."""
+        try:
+            devices, unreadable = _read_assigned_devices(payload)
+            result = await self._apply_assignment(DeviceAssignment(assignment_id=assignment_id, devices=devices))
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.error(f"Error applying an assignment: {e}", exc_info=True)
+            return AssignmentResult(
+                assignment_id=assignment_id,
+                devices=self.executor.registry.connect_info_list(),
+                error=f"{type(e).__name__}: {e}",
+            )
+        if unreadable:
+            result = result.model_copy(update={"errors": {**result.errors, **unreadable}})
+        return result
 
     async def _heartbeat_loop(self) -> None:
         """Send periodic heartbeats to keep connection alive."""
@@ -376,6 +435,11 @@ class WebSocketClient:
                         task.add_done_callback(self._command_tasks.discard)
                     elif envelope.type == "cancel":
                         await self._handle_cancel(envelope)
+                    elif envelope.type == "assignment":
+                        # Beside the loop: replacing a device waits for its running command to finish.
+                        task = asyncio.create_task(self._handle_assignment(envelope))
+                        self._command_tasks.add(task)
+                        task.add_done_callback(self._command_tasks.discard)
                     elif envelope.type == "heartbeat":
                         logger.debug("Received heartbeat")
                     else:
@@ -395,64 +459,28 @@ class WebSocketClient:
             raise
 
     async def _handle_command(self, envelope: MessageEnvelope) -> None:
-        """Handle command message from platform.
-
-        Args:
-            envelope: Message envelope with command payload
-        """
+        """Run one command from the platform and answer it."""
         try:
-            # Parse command
             cmd = CommandMessage.model_validate(envelope.payload)
-            logger.info(f"Received command: {cmd.command} on {cmd.device_name}")
-
-            # Execute command
-            response = await self.executor.execute(cmd)
-
-            # Before the response: the platform reads this socket in order, so
-            # responding first unblocks the caller while the flag is still unread.
-            await self.publish_device_status()
-
-            response_envelope = MessageEnvelope.wrap_response(response)
-            await self._send(response_envelope)
-
-            logger.info(f"Command {cmd.command_id} completed: {response.success}")
-
-        except CommandCancelled as cancelled:
-            # Server no longer awaits this command: no response, and the driver
-            # result is dropped. It stopped part-way, so still report state.
-            logger.info(
-                "Command %s cancelled by server; no response sent",
-                cancelled.command_id,
-            )
-            await self.publish_device_status()
+        except ValidationError as e:
+            logger.error(f"Invalid command message: {e}", exc_info=True)
+            raw_id = envelope.payload.get("command_id", "unknown")
+            report = report_failure(e)
+            await self._send(MessageEnvelope.wrap_response(ResponseMessage(
+                command_id=raw_id if isinstance(raw_id, str) else "unknown",
+                success=False, result=None, error=report.error, error_type=report.error_type,
+            )))
             return
-        except asyncio.CancelledError:
-            # This handler task itself is being torn down (shutdown). Propagate.
-            raise
-        except Exception as e:
-            logger.error(f"Error handling command: {e}", exc_info=True)
-            # Reported before the error goes out, same ordering as a success.
-            await self.publish_device_status()
-            try:
-                raw_id = envelope.payload.get("command_id", "unknown")
-                cmd_id = raw_id if isinstance(raw_id, str) else "unknown"
-                error_response = ResponseMessage(
-                    command_id=cmd_id,
-                    success=False,
-                    result=None,
-                    error=explain_driver_error(e),
-                    error_type=type(e).__name__,
-                    # No outcome on purpose. This catch spans the executor
-                    # call, so an escape can come from before a driver ran or
-                    # from after one did, and the control plane reads a missing
-                    # outcome as a failure -- the assumption that is safe to be
-                    # wrong about. Everything the executor handles classifies
-                    # itself and never reaches here.
-                )
-                error_envelope = MessageEnvelope.wrap_response(error_response)
-                await self._send(error_envelope)
-            except Exception as send_error:
-                logger.error(f"Failed to send error response: {send_error}")
+        logger.info(f"Received command: {cmd.command} on {cmd.device_name}")
+        await answer_command(
+            self.executor, cmd, respond=self._respond, report_status=self.publish_device_status,
+        )
+
+    async def _respond(self, response: ResponseMessage) -> None:
+        try:
+            await self._send(MessageEnvelope.wrap_response(response))
+        except Exception as send_error:
+            logger.error(f"Failed to send response {response.command_id}: {send_error}")
 
     async def _handle_cancel(self, envelope: MessageEnvelope) -> None:
         """Cancel an in-flight command at the server's request.

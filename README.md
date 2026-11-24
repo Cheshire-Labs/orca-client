@@ -4,7 +4,7 @@ Connects lab devices on this computer to an Orca runtime over WebSocket.
 
 ## Overview
 
-orca-client runs on the computer your instruments are plugged into. It loads a driver for each device in its config, connects to an Orca runtime, and runs the commands the runtime sends. The runtime can be a local daemon started with `orca start` or a hosted deployment.
+orca-client runs on the computer your instruments are plugged into. It connects to an Orca runtime, builds the drivers for the devices the runtime assigns to it, and runs the commands the runtime sends. The runtime can be a local daemon started with `orca start` or a hosted deployment.
 
 **Full documentation**: [cheshirelabs.io/docs/orca/device-bridge](https://cheshirelabs.io/docs/orca/device-bridge)
 
@@ -36,11 +36,12 @@ The install above puts orca-client in this environment, not the runtime, so `orc
 
 ```bash
 # Second shell, second virtual environment: the runtime, not orca-client.
+# Run it in your package folder, the one holding topology.py and workflows/.
 orca start --port 8765
-orca topology mount topology:build_topology
+orca topology mount
 ```
 
-`orca start` leaves the daemon idle. It accepts orca-client connections right away, but it has no devices until a topology is mounted, and the topology is what orca-client's devices bind to. `topology:build_topology` names a `build_topology` function in a `topology.py` the daemon can import; writing one is covered by the Orca docs.
+`orca start` leaves the daemon idle. It accepts orca-client connections right away, but it has no devices until its package is mounted. The mounted package says which devices this client runs. The daemon builds the folder it started in, or `ORCA_PACKAGE_DIR`: its `topology.py` and every `workflows/<name>.py`. Writing a package is covered by the Orca docs.
 
 The daemon performs no authentication: it accepts any API key. It listens on
 127.0.0.1 only, so run orca-client on the same computer and treat that computer
@@ -48,30 +49,36 @@ as the trust boundary. See [SECURITY.md](SECURITY.md).
 
 ### Configuration
 
-Create a `config.json` file. This minimal example connects one simulated shaker to that daemon:
+Create a `config.json` file. It says who this computer is and which runtime to connect to:
 
 ```json
 {
-  "client_id": "my-workstation",
+  "client_id": "local",
   "site": "test",
   "lab": "simulation",
   "platform": {
     "url": "ws://127.0.0.1:8765/ws/devices",
     "api_key": "local"
-  },
-  "devices": [
-    {
-      "type": "shaker",
-      "name": "shaker_1",
-      "driver": { "type": "sim" }
-    }
-  ]
+  }
 }
 ```
 
-Each device `name` is the binding key. The runtime binds the device to the topology declaration carrying the same name, so `"name": "shaker_1"` needs a topology that declares `Shaker("shaker_1")`. A name the topology does not declare still connects: the runtime accepts orca-client, logs that the device is not declared, and cannot schedule it in a workflow. Nothing comes back to orca-client either way, so it reports a healthy connection and the runtime's log is where the mismatch shows.
+orca-client does not list devices. Each device is set up in the deployment package on the runtime, in `devices/<name>.json`. The name is the device's name in `topology.py`, and `client` must equal this computer's `client_id`. On the Orca framework, a device with no file runs as a sim on the client called `local`, so one local install sims every device with no files. A file with no `client` also goes to `local`, real driver included. The daemon's `ORCA_DEFAULT_CLIENT` setting names a different client.
 
-Every device the topology declares connects through orca-client. A person who moves plates is a `transporter` with `"driver": {"type": "human"}`: in LIVE, orca-client prompts in its terminal at each pick and place, so run it in a terminal you can type into.
+```json
+{
+  "client": "local",
+  "real": {
+    "type": "plr",
+    "backend": "PreciseFlex",
+    "connection": { "type": "tcp", "host": "192.168.1.100" }
+  }
+}
+```
+
+A connection is `tcp` (`host`, optional `port`), `serial` (`port`, such as `COM3`), or `usb` (`serial_number`, `device_address` or `device_id`; with none, the first instrument found). A device with no `real` block runs simulated. A person who moves plates is a `transporter` with `"real": {"type": "human"}`: in LIVE, orca-client prompts in its terminal at each pick and place, so run it in a terminal you can type into.
+
+Paths on this computer stay in `config.json`, in `machine`: where Venus is installed, and where the vendor Opentrons simulator is. The runtime can never tell this computer which program to start.
 
 To connect to a hosted deployment instead, set `url` to its `wss://` address and `api_key` to the key it issued you.
 

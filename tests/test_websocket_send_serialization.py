@@ -5,16 +5,17 @@ Commands dispatch as concurrent tasks, so multiple _handle_command coroutines
 safe to interleave across coroutines, so _send holds a lock.
 """
 
+from tests.no_assignment import build_nothing
 import asyncio
 import json
 
 import pytest
 
-from cheshire_drivers.gateway_protocol import HeartbeatMessage, MessageEnvelope
+from cheshire_drivers.gateway_protocol import AssignmentResult, DeviceAssignment, HeartbeatMessage, MessageEnvelope
 from orca_client.client.websocket_client import WebSocketClient
 from orca_client.config.models import ClientConfig
-from orca_client.devices import DeviceRegistry
-from orca_client.executor import CommandExecutor
+from cheshire_drivers.command_executor import DeviceRegistry
+from orca_client.executor import ClientCommandExecutor
 
 
 class _OverlapDetectingWs:
@@ -39,7 +40,7 @@ async def test_concurrent_send_is_serialized(
     device_registry: DeviceRegistry,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    client = WebSocketClient(client_config, CommandExecutor(device_registry))
+    client = WebSocketClient(client_config, ClientCommandExecutor(device_registry), apply_assignment=build_nothing)
     fake_ws = _OverlapDetectingWs()
     monkeypatch.setattr(client, "ws", fake_ws)
 
@@ -64,27 +65,28 @@ class _CapturingWs:
 
 
 @pytest.mark.asyncio
-async def test_connect_handshake_serializes_frozenset_capabilities(
+async def test_assignment_result_serializes_frozenset_capabilities(
     client_config: ClientConfig,
     device_registry: DeviceRegistry,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The handshake advertises each device's interfaces/capabilities as
+    """An assignment result advertises each device's interfaces/capabilities as
     frozensets, but the envelope payload is typed dict[str, JsonValue], which
-    rejects frozenset. The connect path must JSON-normalize (frozenset -> list)
-    before building the envelope. Hand-rolling the envelope with a plain
-    model_dump() raised ValidationError here; wrap_connect (model_dump
-    mode="json") is the fix.
+    rejects frozenset. The result must be JSON-normalized (frozenset -> list)
+    before building the envelope.
     """
-    client = WebSocketClient(client_config, CommandExecutor(device_registry))
+    async def report_held_devices(assignment: DeviceAssignment) -> AssignmentResult:
+        return AssignmentResult(assignment_id=assignment.assignment_id, devices=device_registry.connect_info_list())
+
+    client = WebSocketClient(client_config, ClientCommandExecutor(device_registry), apply_assignment=report_held_devices)
     fake_ws = _CapturingWs()
     monkeypatch.setattr(client, "ws", fake_ws)
 
     # Must not raise on the frozenset interfaces/capabilities.
-    await client._send_connect_message()
+    await client._handle_assignment(MessageEnvelope.wrap_assignment(DeviceAssignment(assignment_id="a1", devices=[])))
 
     assert len(fake_ws.frames) == 1
     devices = json.loads(fake_ws.frames[0])["payload"]["devices"]
-    assert devices, "handshake must advertise the registered devices"
+    assert devices, "the assignment result must advertise the registered devices"
     assert isinstance(devices[0]["interfaces"], list)
     assert isinstance(devices[0]["capabilities"], list)

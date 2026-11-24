@@ -11,12 +11,13 @@ to look for a typo in a name that was correct.
 
 import pytest
 
+from cheshire_drivers.driver_hooks import DriverHooks
 from cheshire_drivers.gateway_protocol import CommandMessage
-from orca_client.devices import DeviceRegistry
-from orca_client.executor import CommandExecutor
+from cheshire_drivers.command_executor import DeviceRegistry
+from orca_client.executor import ClientCommandExecutor
 
 
-class _FlexWithNoGripper:
+class _FlexWithNoGripper(DriverHooks):
     """Advertises the jaws, cannot reach them: nothing is fitted."""
 
     interfaces = frozenset({"IForceGripperJaw"})
@@ -42,7 +43,7 @@ def registry() -> DeviceRegistry:
 
 @pytest.mark.asyncio
 async def test_absent_hardware_is_named_in_the_error(registry: DeviceRegistry) -> None:
-    response = await CommandExecutor(registry).execute(
+    response = await ClientCommandExecutor(registry).execute(
         CommandMessage(
             command_id="c1",
             device_name="flex_1",

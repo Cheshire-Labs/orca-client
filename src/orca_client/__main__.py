@@ -7,6 +7,7 @@ import logging
 from pathlib import Path
 
 from . import __version__
+from .builtin import builtin_client_config, stop_when_stdin_closes
 from .config import log_known_failure, setup_logging
 from .session import ClientSession
 
@@ -20,12 +21,15 @@ async def async_main(args: argparse.Namespace) -> int:
         Exit code (0 for success, non-zero for error)
     """
     try:
-        session = ClientSession.from_config_path(args.config)
+        session = ClientSession(builtin_client_config()) if args.builtin else ClientSession.from_config_path(args.config)
     except (FileNotFoundError, ValueError) as rejected:
         # Everything the config and driver layers refuse is raised with a message
         # written for the operator, so the message is the whole report.
         log_known_failure(logger, str(rejected))
         return 1
+
+    if args.builtin:
+        stop_when_stdin_closes(session.stop)
 
     try:
         await session.run()
@@ -71,6 +75,11 @@ Configuration:
         help="Path to config.json file (default: ./config.json)"
     )
     parser.add_argument(
+        "--builtin",
+        action="store_true",
+        help="Run as the server's built-in client; the server starts it this way and supplies its settings"
+    )
+    parser.add_argument(
         "--env", "-e",
         type=Path,
         default=None,
@@ -99,7 +108,7 @@ Configuration:
             print("Warning: python-dotenv not installed, --env flag ignored")
 
     # Setup logging
-    setup_logging(verbose=args.verbose)
+    setup_logging(verbose=args.verbose, log_name="builtin-client.log" if args.builtin else "client.log")
 
     # Log startup banner
     logger.info("=" * 60)

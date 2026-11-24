@@ -9,6 +9,8 @@ import logging
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
+from cheshire_drivers.command_executor.executor import logger as command_executor_logger
+
 
 def get_log_directory() -> Path:
     """Get platform-specific log directory.
@@ -43,24 +45,13 @@ def log_known_failure(logger: logging.Logger, message: str) -> None:
         logger.error(message)
 
 
-def setup_logging(verbose: bool = False) -> logging.Logger:
-    """Setup logging with rotating file handler.
+_CLIENT_LOGGERS = ("orca_client", command_executor_logger.name)
 
-    Args:
-        verbose: If True, set console to DEBUG level
 
-    Returns:
-        Configured logger instance
-    """
+def setup_logging(verbose: bool = False, log_name: str = "client.log") -> logging.Logger:
+    """Log to the console and a rotating file. Each process on a PC needs its own file: Windows will not rotate a shared one."""
     log_dir = get_log_directory()
-    log_file = log_dir / "client.log"
-
-    # Root logger for orca-client
-    logger = logging.getLogger("orca_client")
-    logger.setLevel(logging.DEBUG if verbose else logging.INFO)
-
-    # Clear any existing handlers
-    logger.handlers.clear()
+    log_file = log_dir / log_name
 
     # File handler - rotating, 10MB max, keep 5 files
     file_handler = RotatingFileHandler(
@@ -82,9 +73,15 @@ def setup_logging(verbose: bool = False) -> logging.Logger:
     )
     console_handler.setFormatter(console_formatter)
 
-    logger.addHandler(file_handler)
-    logger.addHandler(console_handler)
+    # The command executor that runs every device command lives in cheshire-drivers.
+    for name in _CLIENT_LOGGERS:
+        client_logger = logging.getLogger(name)
+        client_logger.setLevel(logging.DEBUG if verbose else logging.INFO)
+        client_logger.handlers.clear()
+        client_logger.addHandler(file_handler)
+        client_logger.addHandler(console_handler)
 
+    logger = logging.getLogger("orca_client")
     logger.info(f"Logging to: {log_file}")
 
     return logger

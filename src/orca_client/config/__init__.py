@@ -1,9 +1,6 @@
 """Configuration package for orca-client."""
 
 from .models import (
-    ConnectionConfig,
-    DriverConfig,
-    DeviceConfig,
     PlatformConfig,
     ClientConfig,
 )
@@ -14,9 +11,6 @@ from .logging_setup import get_log_directory, log_known_failure, setup_logging
 load_config = load_client_config
 
 __all__ = [
-    "ConnectionConfig",
-    "DriverConfig",
-    "DeviceConfig",
     "PlatformConfig",
     "ClientConfig",
     "load_client_config",

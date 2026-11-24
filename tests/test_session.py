@@ -9,12 +9,19 @@ from pathlib import Path
 
 import pytest
 
+from cheshire_drivers.gateway_protocol import AssignedDevice, DeviceAssignment
 from orca_client.config.models import ClientConfig
 from orca_client.session import ClientSession
 
 
-async def test_session_registers_every_configured_device(client_config: ClientConfig):
+async def test_session_starts_empty_and_registers_every_assigned_device(client_config: ClientConfig):
     session = ClientSession(client_config)
+    assert session.registry.get_all_device_ids() == []
+
+    await session.apply_assignment(DeviceAssignment(assignment_id="a1", devices=[
+        AssignedDevice(kind="shaker", name="test_shaker"),
+        AssignedDevice(kind="centrifuge", name="test_centrifuge"),
+    ]))
 
     assert set(session.registry.get_all_device_ids()) == {"test_shaker", "test_centrifuge"}
 
@@ -75,9 +82,6 @@ async def test_from_config_path_builds_a_session_from_disk(tmp_path: Path):
                 "site": "test",
                 "lab": "simulation",
                 "platform": {"url": "wss://orca.example.com/ws/devices", "api_key": "k"},
-                "devices": [
-                    {"type": "shaker", "name": "shaker_1", "driver": {"type": "sim"}}
-                ],
             }
         )
     )
@@ -85,4 +89,4 @@ async def test_from_config_path_builds_a_session_from_disk(tmp_path: Path):
     session = ClientSession.from_config_path(config_path)
 
     assert session.config.client_id == "bench-01"
-    assert session.registry.get_all_device_ids() == ["shaker_1"]
+    assert session.registry.get_all_device_ids() == []

@@ -22,9 +22,8 @@ def _readme() -> str:
 
 
 def _example_config() -> dict:
-    """The one JSON block in the README: the config a reader copies."""
+    """The first JSON block in the README: the config a reader copies."""
     blocks = re.findall(r"```json\n(.*?)```", _readme(), re.S)
-    assert len(blocks) == 1, f"expected one JSON example, found {len(blocks)}"
     return json.loads(blocks[0])
 
 
@@ -41,19 +40,14 @@ def test_the_example_config_is_one_the_bridge_accepts(tmp_path: Path) -> None:
 
     session = ClientSession(load_config(str(config_path)))
 
-    assert session.registry.get_all_device_ids() == ["shaker_1"]
+    assert session.registry.get_all_device_ids() == []
 
 
-def test_every_example_device_is_shown_bound_to_a_topology_declaration() -> None:
-    """A device binds by name, so a name no declaration carries binds nothing."""
-    readme = _readme()
+def test_the_example_device_setup_names_the_client_the_example_config_is() -> None:
+    """A device reaches this computer by `client`, so a setup naming another client assigns nothing here."""
+    config, setup = (json.loads(block) for block in re.findall(r"```json\n(.*?)```", _readme(), re.S)[:2])
 
-    for device in _example_config()["devices"]:
-        declaration = f'("{device["name"]}")'
-        assert declaration in readme, (
-            f"the example device {device['name']!r} is shown bound to no topology "
-            f"declaration, so a reader who copies it binds nothing"
-        )
+    assert setup["client"] == config["client_id"]
 
 
 def test_the_runtime_is_started_from_its_own_environment() -> None:

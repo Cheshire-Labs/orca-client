@@ -18,8 +18,9 @@ from websockets.frames import Close
 from orca_client.__main__ import async_main
 from orca_client.client import WebSocketClient
 from orca_client.config.models import ClientConfig
-from orca_client.devices import DeviceRegistry
-from orca_client.executor import CommandExecutor
+from cheshire_drivers.command_executor import DeviceRegistry
+from orca_client.executor import ClientCommandExecutor
+from tests.no_assignment import build_nothing
 
 
 def _errors(caplog: pytest.LogCaptureFixture) -> list[logging.LogRecord]:
@@ -30,7 +31,8 @@ def _client(client_config: ClientConfig) -> WebSocketClient:
     platform = client_config.platform.model_copy(update={"reconnect_backoff": [0.01]})
     return WebSocketClient(
         config=client_config.model_copy(update={"platform": platform}),
-        executor=CommandExecutor(registry=DeviceRegistry()),
+        executor=ClientCommandExecutor(DeviceRegistry()),
+        apply_assignment=build_nothing,
     )
 
 
@@ -39,7 +41,7 @@ async def test_a_config_file_that_is_not_there_prints_its_message_alone(
 ):
     caplog.set_level(logging.INFO, logger="orca_client")
 
-    exit_code = await async_main(Namespace(config=tmp_path / "config.json"))
+    exit_code = await async_main(Namespace(builtin=False, config=tmp_path / "config.json"))
 
     assert exit_code == 1
     [refused] = _errors(caplog)
@@ -54,11 +56,11 @@ async def test_a_config_the_models_reject_prints_its_message_alone(
     caplog.set_level(logging.INFO, logger="orca_client")
     config = tmp_path / "config.json"
     config.write_text(
-        '{"client_id": "c", "site": "s", "lab": "l", "devices": [],'
+        '{"client_id": "c", "site": "s", "lab": "l",'
         ' "platform": {"url": "http://127.0.0.1:8765/ws/devices", "api_key": "k"}}'
     )
 
-    exit_code = await async_main(Namespace(config=config))
+    exit_code = await async_main(Namespace(builtin=False, config=config))
 
     assert exit_code == 1
     [refused] = _errors(caplog)
@@ -72,7 +74,7 @@ async def test_verbose_still_gets_the_trace(
     """The trace is debug detail, not noise on by default."""
     caplog.set_level(logging.DEBUG, logger="orca_client")
 
-    await async_main(Namespace(config=tmp_path / "config.json"))
+    await async_main(Namespace(builtin=False, config=tmp_path / "config.json"))
 
     [refused] = _errors(caplog)
     assert refused.exc_info is not None
